@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Dinner Tab{% endblock %}
+{% block head %}<link rel="manifest" href="/manifest.webmanifest">{% endblock %}
+{% block bodyattrs %}class="no-tabs"{% endblock %}
+{% block body %}
+<main class="wrap hero stack">
+  <h1>Dinner Tab</h1>
+  {% if configured %}
+  <form id="login" class="card stack">
+    <div><label for="pw">Organiser password</label><input id="pw" type="password" autocomplete="current-password" required></div>
+    <button class="primary block">Sign in</button>
+    <p id="err" class="banner bad hidden" role="alert"></p>
+  </form>
+  <p class="muted">Guests don't sign in — they scan the dinner's QR code.</p>
+  <script type="module" src="/static/js/login.js?v={{ version }}"></script>
+  {% else %}
+  <div class="banner warn">Organiser sign-in is off: set ADMIN_PASSWORD on the server.</div>
+  {% endif %}
+</main>
+{% endblock %}

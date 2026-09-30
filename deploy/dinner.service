@@ -1,0 +1,20 @@
+# Dinner Tab on do-personal. Installed to /etc/systemd/system/dinner.service
+[Unit]
+Description=Dinner Tab
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/dinner
+EnvironmentFile=/var/www/dinner/.env
+# Data lives outside the code folder so deploys never touch it.
+Environment=DATABASE_URL=sqlite:////var/lib/dinner/dinner.db
+Environment=UPLOAD_DIR=/var/lib/dinner/uploads
+# ONE worker on purpose: live updates and the edit lock are in-process.
+ExecStart=/var/www/dinner/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8030 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

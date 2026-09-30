@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14110e">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}Dinner Tab{% endblock %}</title>
+  <script src="/static/js/prefs.js?v={{ version }}"></script>
+  <link rel="stylesheet" href="/static/css/app.css?v={{ version }}">
+  <link rel="icon" href="/static/icons/icon-192.png">
+  {% block head %}{% endblock %}
+</head>
+<body {% block bodyattrs %}{% endblock %}>
+{% block body %}{% endblock %}
+</body>
+</html>

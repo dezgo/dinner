@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Dinner Tab — organiser{% endblock %}
+{% block head %}
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+{% endblock %}
+{% block bodyattrs %}class="no-tabs" data-view="{{ view }}" data-dinner="{{ dinner_id or '' }}"{% endblock %}
+{% block body %}
+<header class="topbar"><div class="wrap row">
+  <a href="/o" class="title grow" style="color:inherit;text-decoration:none" id="title">Dinner Tab</a>
+  <span id="conn" class="conn hidden" aria-live="polite"></span>
+  <span id="prefs" class="row" style="gap:.3rem"></span>
+</div></header>
+<main id="app"><div class="wrap"><p class="muted" style="padding-top:2rem">Loading…</p></div></main>
+<script type="module" src="/static/js/organiser.js?v={{ version }}"></script>
+{% endblock %}
