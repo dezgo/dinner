@@ -39,6 +39,7 @@ async function home() {
             <span class="state ${d.status === "finalised" ? (d.waiting_on ? "warn" : "good") : "info"}">${d.status === "finalised" ? (d.waiting_on ? `Waiting on ${d.waiting_on}` : "All paid") : "Open"}</span>
           </a>`).join("") || '<p class="muted">No dinners yet.</p>'}
       </section>
+      ${data.archived_count ? `<p class="center"><button class="small" id="showcleared">Cleared dinners (${data.archived_count})</button></p><section id="cleared"></section>` : ""}
       <section class="card stack">
         <h2>Try it first</h2>
         <p class="muted">A demo dinner with a sample menu, guests, orders and receipt. Payments are simulated — nothing touches your bank.</p>
@@ -55,6 +56,24 @@ async function home() {
     try { const r = await call("POST", "/api/o/demo"); location.href = `/o/d/${r.id}`; } catch (err) { fail(err); e.target.disabled = false; }
   });
   $("#out").addEventListener("click", async () => { await api("POST", "/api/logout"); location.href = "/o/login"; });
+  $("#showcleared")?.addEventListener("click", async (e) => {
+    e.target.remove();
+    try { showCleared((await call("GET", "/api/o/dinners?archived=true")).dinners); } catch (err) { fail(err); }
+  });
+}
+
+function showCleared(list) {
+  const box = $("#cleared");
+  box.innerHTML = `<h2>Cleared dinners</h2><p class="muted">Hidden from your list and closed to guests. Bring one back to use it again.</p>
+    ${list.map((d) => `<div class="card row between" style="margin-top:.5rem">
+      <div class="grow"><b>${esc(d.restaurant_name || "Dinner")}</b> <span class="muted">${esc(d.code)}</span>
+        <div class="muted">${when(d.created_at)} · ${d.people} people${d.is_demo ? " · demo" : ""}</div></div>
+      <button class="small" data-restore="${d.id}">Bring back</button></div>`).join("")}`;
+  box.addEventListener("click", async (e) => {
+    const id = e.target.closest("[data-restore]")?.dataset.restore;
+    if (!id) return;
+    try { await call("PATCH", `/api/o/d/${id}`, { archived: false }); location.href = `/o/d/${id}`; } catch (err) { fail(err); }
+  });
 }
 
 // ============================================================ settings
@@ -162,7 +181,8 @@ function renderDinner() {
   const scroll = window.scrollY;
   app.innerHTML = `
     <div class="wrap">
-      <div class="row between" style="margin-top:.75rem">
+      <p style="margin:.75rem 0 0"><a href="/o">← All dinners / start a new one</a></p>
+      <div class="row between" style="margin-top:.5rem">
         <div><b>${esc(S.dinner.code)}</b> · <span class="state ${locked() ? "good" : S.dinner.reopened ? "warn" : "info"}">${locked() ? "Finalised" : S.dinner.reopened ? "Reopened" : "Open"}</span>${S.dinner.is_demo ? ' <span class="state">Demo</span>' : ""}</div>
         <a class="btn small" href="/d/${esc(S.public_token)}">My diner view</a>
       </div>
@@ -194,6 +214,11 @@ function paneShare() {
       </table>
       <form id="addp" data-keep class="row" style="margin-top:.75rem"><input id="pname" class="grow" placeholder="Add someone without a phone" maxlength="40"><button>Add</button></form>
       <p class="muted">Duplicate names are fine — each person gets their own reference. If someone changes phone, give them a personal link (it works once, for 12 hours).</p>
+    </section>
+    <section class="card stack">
+      <h2>Finished with this dinner?</h2>
+      <p class="muted">Clear it off your list to start fresh. Nothing is deleted — you can bring it back from “Cleared dinners” on the dinner list.</p>
+      <button class="danger block" data-cleardinner>Clear this dinner</button>
     </section>`;
   $("#rename").addEventListener("submit", async (e) => { e.preventDefault(); try { await call("PATCH", oBase, { restaurant_name: $("#rest").value }); toast("Saved"); } catch (err) { fail(err); } });
   $("#addp").addEventListener("submit", async (e) => { e.preventDefault(); try { await call("POST", `${oBase}/people`, { name: $("#pname").value }); $("#pname").value = ""; refresh(); } catch (err) { fail(err); } });
@@ -768,6 +793,7 @@ document.addEventListener("click", async (e) => {
   else if (d.plink) {
     try { const r = await call("POST", `${oBase}/people/${d.plink}/link`); sheet(`<h2>Personal link for ${esc(nameOf(d.plink))}</h2><p class="muted">Works once, for 12 hours. Send it only to them — it signs them in as themselves.</p><p><code style="word-break:break-all">${esc(r.url)}</code></p><div class="row"><button class="grow" data-close>Done</button><button class="primary grow" data-copy="${esc(r.url)}">Copy</button></div>`); } catch (err) { fail(err); }
   } else if (d.prename) renameSheet(d.prename);
+  else if (d.cleardinner !== undefined) clearDinnerSheet();
   else if (d.premove) confirmSheet(`Remove ${nameOf(d.premove)}?`, () => act(() => call("DELETE", `${oBase}/people/${d.premove}`)));
 });
 
@@ -775,6 +801,20 @@ function confirmSheet(message, onYes) {
   const s = sheet(`<p>${esc(message)}</p><div class="row"><button class="grow" data-close>Cancel</button><button class="primary grow" data-go>Yes</button></div>`);
   $("[data-go]", s.el).addEventListener("click", () => { s.close(); onYes(); });
   return true;
+}
+
+function clearDinnerSheet() {
+  const owing = S.dinner.status === "finalised"
+    ? Object.values(S.payment_statuses).filter((x) => ["awaiting", "marked_sent", "part_paid"].includes(x.state)).length : 0;
+  const warn = owing
+    ? `<div class="banner warn">${owing} ${owing > 1 ? "people still owe" : "person still owes"} you. Once it's cleared, their transfers won't be matched automatically.</div>`
+    : S.participants.length > 1 ? `<div class="banner warn">The guest link stops working once it's cleared.</div>` : "";
+  const s = sheet(`<h2>Clear ${esc(S.dinner.restaurant_name || "this dinner")}?</h2>${warn}
+    <p class="muted">It disappears from your list. You can bring it back later from “Cleared dinners”.</p>
+    <div class="row"><button class="grow" data-close>Keep it</button><button class="primary grow" data-go>Clear it</button></div>`);
+  $("[data-go]", s.el).addEventListener("click", async () => {
+    try { await call("PATCH", oBase, { archived: true }); location.href = "/o"; } catch (err) { fail(err); }
+  });
 }
 
 function renameSheet(pid) {

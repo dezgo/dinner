@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
 
 from app.config import get_settings
 from app.db import get_session, locked_write, session_scope
@@ -87,8 +87,8 @@ def logout(response: Response):
 
 # ------------------------------------------------------------------ dinners
 @api.get("/dinners")
-def list_dinners(s: Session = Depends(get_session)):
-    rows = s.exec(select(Dinner).where(Dinner.archived == False).order_by(col(Dinner.created_at).desc())).all()  # noqa: E712
+def list_dinners(archived: bool = False, s: Session = Depends(get_session)):
+    rows = s.exec(select(Dinner).where(Dinner.archived == archived).order_by(col(Dinner.created_at).desc())).all()
     out = []
     for d in rows:
         st = payments.statuses(s, d)
@@ -106,7 +106,13 @@ def list_dinners(s: Session = Depends(get_session)):
             }
         )
     review = len([t for t in payments.review_queue(s, include_unmatched=False) if not t.is_simulated])
-    return {"dinners": out, "review_count": review, "profile_ready": bool(payment_profile(s).get("payid"))}
+    archived_count = s.exec(select(func.count()).select_from(Dinner).where(Dinner.archived == True)).one()  # noqa: E712
+    return {
+        "dinners": out,
+        "archived_count": archived_count,
+        "review_count": review,
+        "profile_ready": bool(payment_profile(s).get("payid")),
+    }
 
 
 @api.post("/dinners")
@@ -171,8 +177,14 @@ def edit_dinner(dinner_id: str, body: dict = Body(...)):
         d = _dinner(s, dinner_id)
         if "restaurant_name" in body:
             d.restaurant_name = " ".join(str(body["restaurant_name"]).split())[:80]
-        if "archived" in body:
+        if "archived" in body and bool(body["archived"]) != d.archived:
             d.archived = bool(body["archived"])
+            audit(
+                s,
+                d.id,
+                "organiser",
+                "Cleared from the dinner list" if d.archived else "Brought back to the dinner list",
+            )
         touch(s, d)
     return {"ok": True}
 

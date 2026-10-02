@@ -248,3 +248,22 @@ def test_requests_without_app_header_are_refused(dinner):
 
 def test_unknown_dinner_link(client):
     assert client.get("/api/d/not-a-real-token/state").status_code == 404
+
+
+def test_clearing_a_dinner_hides_it_and_closes_the_guest_link_until_brought_back(dinner):
+    org = dinner.org
+    guest = dinner.guest("Amy")
+    assert org.patch(f"/api/o/d/{dinner.id}", json={"archived": True}, headers=H).status_code == 200
+
+    listed = org.get("/api/o/dinners").json()
+    assert dinner.id not in [d["id"] for d in listed["dinners"]]
+    assert listed["archived_count"] == 1
+    assert [d["id"] for d in org.get("/api/o/dinners?archived=true").json()["dinners"]] == [dinner.id]
+    assert guest.get(f"{dinner.base}/state").status_code == 404
+    assert "Cleared from the dinner list" in [a["message"] for a in dinner.state()["audit"]]
+
+    assert org.patch(f"/api/o/d/{dinner.id}", json={"archived": False}, headers=H).status_code == 200
+    listed = org.get("/api/o/dinners").json()
+    assert dinner.id in [d["id"] for d in listed["dinners"]]
+    assert listed["archived_count"] == 0
+    assert guest.get(f"{dinner.base}/state").status_code == 200
