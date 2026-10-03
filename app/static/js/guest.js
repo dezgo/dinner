@@ -263,7 +263,7 @@ function dishHtml(item) {
           ${item.page_id ? `<button class="small" data-photo="${item.page_id}">View on the menu photo</button>` : ""}
           <div class="row" style="margin-top:.6rem">
             <button class="small" data-star="${item.id}" aria-pressed="${starred}">${starred ? "★ On shortlist" : "☆ Shortlist"}</button>
-            <button class="primary grow" data-record="${item.id}" ${locked() ? "disabled" : ""}>Record my order</button>
+            <button class="primary grow" data-record="${item.id}" ${locked() ? "disabled" : ""}>Add to order</button>
           </div>
         </div>` : ""}
     </div>`;
@@ -332,11 +332,11 @@ function recordSheet(item) {
   const needsPrice = item.price_cents == null && !item.variants.length;
   const others = S.participants.filter((p) => p.id !== me());
   const forWho = S.organiser ? `
-      <label for="for">Recording for</label>
+      <label for="for">Adding for</label>
       <select id="for">${S.participants.map((p) => `<option value="${p.id}" ${p.id === me() ? "selected" : ""}>${esc(p.name)}${p.id === me() ? " (you)" : ""}</option>`).join("")}</select>` : "";
   const s = sheet(`
-    <div class="row between"><h2>Record my order</h2><button class="small" data-close>Cancel</button></div>
-    <p class="muted">This logs what you ordered with the staff, so the bill can be split. It doesn't send anything to the kitchen.</p>
+    <div class="row between"><h2>Add to my order</h2><button class="small" data-close>Cancel</button></div>
+    <p class="muted">Order with the staff as usual — this just keeps track so the bill can be split. Nothing goes to the kitchen.</p>
     <h3>${esc(item.name)}</h3>
     <form id="rec" class="stack">
       ${item.variants.length ? `<fieldset style="border:0;padding:0;margin:0"><legend class="muted">Choose one</legend>
@@ -356,7 +356,7 @@ function recordSheet(item) {
         <label class="check" id="unitsrow"><input type="checkbox" id="units"> Several of the same (e.g. drinks) — each person claims their own</label>
       </div>
       <div class="total-row big"><span>Total</span><span id="preview" class="num"></span></div>
-      <button class="primary block">Record</button>
+      <button class="primary block">Add</button>
     </form>`);
   const el = s.el;
   let qty = 1;
@@ -395,7 +395,7 @@ function recordSheet(item) {
     };
     if (units) body.weights = { [forId]: 1 };
     if (item.price_cents == null && !item.variants.length) body.unit_price_cents = toCents($("#mp", el)?.value) ?? 0;
-    outbox.push({ method: "POST", url: `${base}/lines`, body, label: item.name, done: `Recorded ${item.name}` });
+    outbox.push({ method: "POST", url: `${base}/lines`, body, label: item.name, done: `Added ${item.name}` });
     s.close();
   });
 }
@@ -411,7 +411,7 @@ function manualSheet() {
         <div><label for="mq">Quantity</label><input id="mq" type="number" min="1" max="99" value="1"></div>
       </div>
       <label class="check"><input type="checkbox" id="msh"> Shared by everyone at the table</label>
-      <button class="primary block">Record</button>
+      <button class="primary block">Add</button>
     </form>`);
   $("#man", s.el).addEventListener("submit", (e) => {
     e.preventDefault();
@@ -422,7 +422,7 @@ function manualSheet() {
       method: "POST", url: `${base}/lines`, label: $("#mn", s.el).value,
       body: { name: $("#mn", s.el).value, unit_price_cents: price, quantity: parseInt($("#mq", s.el).value, 10) || 1,
               shared, participants: shared ? S.participants.map((p) => p.id) : [me()] },
-      done: "Recorded",
+      done: "Added",
     });
     s.close();
   });
@@ -590,7 +590,7 @@ function renderMine() {
       <h1 style="margin-top:1rem">My order</h1>
       ${outbox.size ? `<div class="banner warn">${outbox.size} change${outbox.size > 1 ? "s" : ""} waiting to send${outbox.failing ? " — no connection yet, will retry" : ""}.</div>` : ""}
       <div class="card">
-        ${mineLines.length ? mineLines.map((l) => lineRow(l, { forMe: true })).join("") : `<p class="muted">Nothing recorded yet. Find a dish on the menu and tap <b>Record my order</b>. Shortlisting doesn't add anything to the bill.</p>`}
+        ${mineLines.length ? mineLines.map((l) => lineRow(l, { forMe: true })).join("") : `<p class="muted">Nothing here yet. Find a dish on the menu and tap <b>Add to order</b>. Shortlisting doesn't add anything to the bill.</p>`}
       </div>
       <div class="card">
         <div class="total-row"><span>My items</span><span class="num">${money(totals.items)}</span></div>
@@ -619,7 +619,7 @@ function renderTable() {
       <h2 style="margin-top:1.25rem">Running totals</h2>
       <div class="card">
         ${S.participants.map((p) => `<div class="total-row"><span>${esc(p.name)}${p.id === me() ? " (you)" : ""}</span><span class="num">${money(b.people[p.id]?.total || 0)}</span></div>`).join("")}
-        <div class="total-row big"><span>Recorded</span><span class="num">${money(b.recorded_total)}</span></div>
+        <div class="total-row big"><span>Ordered so far</span><span class="num">${money(b.recorded_total)}</span></div>
         ${b.bill_total != null ? `<div class="total-row"><span>Restaurant's total</span><span class="num">${money(b.bill_total)}</span></div>` : ""}
       </div>
       ${S.receipt_image ? `<p><button class="small" data-receipt>View the receipt</button></p>` : ""}

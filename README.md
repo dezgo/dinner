@@ -27,7 +27,7 @@ paid back by PayID — with Up Bank spotting the transfers for you.
 3. **Guests join** with a display name and browse a plain list of dishes and
    prices — tap one for its description, options and dietary notes. Search, a
    Filter button, a "Jump to" section bar and an "Aa" display button (text size,
-   light/dark) sit above it. Shortlist, and tap **Record my order**. Recording only logs what
+   light/dark) sit above it. Shortlist, and tap **Add to order**. Adding only keeps track of what
    they ordered with staff; it doesn't send anything to the kitchen.
 4. **Shared dishes** are recorded once. Anyone else tapping the same dish is asked
    to *join* it, with a preview of how everyone's part changes. Several of the
