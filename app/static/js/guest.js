@@ -504,6 +504,18 @@ function leave(line) {
   });
 }
 
+// Straight from My order: one tap, then a confirm so a stray tap can't lose it.
+function removeSheet(line) {
+  const s = sheet(`
+    <h2>Remove ${esc(line.name)}?</h2>
+    <p class="muted">It comes off the bill. If you did order it, someone will need to add it back.</p>
+    <div class="row"><button class="grow" data-close>Keep it</button><button class="primary grow" data-go>Remove</button></div>`);
+  $("[data-go]", s.el).addEventListener("click", () => {
+    outbox.push({ method: "DELETE", url: `${base}/lines/${line.id}?version=${line.version}`, label: line.name, done: "Removed" });
+    s.close();
+  });
+}
+
 function editSheet(line) {
   const item = line.menu_item_id ? itemById(line.menu_item_id) : null;
   const s = sheet(`
@@ -547,11 +559,13 @@ function lineRow(l, { forMe }) {
     : l.split_mode === "proportional" ? "Split in proportion to everyone's items"
     : allocs.length ? allocs.map((a) => esc(nameOf(a.participant_id))).join(", ") : "<b>Nobody yet</b>";
   const canEdit = S.organiser || l.created_by === me() || (allocs.length === 1 && mine);
+  const solo = (allocs.length === 1 && mine) || (!allocs.length && l.created_by === me());
   const actions = locked() ? "" : [
     !mine && l.split_mode !== "proportional" && (l.split_mode !== "units" || c.unallocated) ? `<button class="small" data-join="${l.id}">${l.split_mode === "units" ? "Claim" : allocs.length ? "Join" : "It's mine"}</button>` : "",
     mine && l.split_mode === "units" ? `<button class="small" data-join="${l.id}">Change</button>` : "",
-    mine && allocs.length > 1 ? `<button class="small" data-leave="${l.id}">Leave</button>` : "",
+    mine && allocs.length > 1 ? `<button class="small" data-leave="${l.id}">${forMe ? "Remove me" : "Leave"}</button>` : "",
     canEdit && l.kind === "item" ? `<button class="small" data-edit="${l.id}">Edit</button>` : "",
+    forMe && solo && canEdit && l.kind === "item" ? `<button class="small danger" data-remove="${l.id}">Remove</button>` : "",
   ].join("");
   const amountMine = forMe ? money(c.shares[me()] || 0) : money(c.amount);
   return `
@@ -676,7 +690,7 @@ const PAYID_LABEL = { phone: "mobile number", email: "email", abn: "ABN", org_id
 
 // ---------------------------------------------------------------- events
 document.addEventListener("click", async (e) => {
-  const t = e.target.closest("[data-tab],[data-gotab],[data-filters],[data-clearprice],[data-filter],[data-jump],[data-toggle],[data-star],[data-record],[data-photo],[data-manual],[data-join],[data-leave],[data-edit],[data-copy],[data-sent],[data-rename],[data-receipt]");
+  const t = e.target.closest("[data-tab],[data-gotab],[data-filters],[data-clearprice],[data-filter],[data-jump],[data-toggle],[data-star],[data-record],[data-photo],[data-manual],[data-join],[data-leave],[data-remove],[data-edit],[data-copy],[data-sent],[data-rename],[data-receipt]");
   if (!t || !S) return;
   const d = t.dataset;
   if (d.tab) setTab(d.tab);
@@ -698,6 +712,7 @@ document.addEventListener("click", async (e) => {
   } else if (d.photo) showPhoto(d.photo);
   else if (d.manual) manualSheet();
   else if (d.join) { const l = S.lines.find((x) => x.id === d.join); if (l) joinSheet(l); }
+  else if (d.remove) { const l = S.lines.find((x) => x.id === d.remove); if (l) removeSheet(l); }
   else if (d.leave) { const l = S.lines.find((x) => x.id === d.leave); if (l) leave(l); }
   else if (d.edit) { const l = S.lines.find((x) => x.id === d.edit); if (l) editSheet(l); }
   else if (d.copy !== undefined) copy(d.copy, d.what);
