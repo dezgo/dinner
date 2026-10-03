@@ -165,7 +165,8 @@ let refreshTimer;
 const refreshSoon = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); };
 async function refresh() {
   // Don't yank the page out from under a half-typed form.
-  if (document.activeElement?.closest("form[data-keep]")) { refreshTimer = setTimeout(refresh, 1500); return; }
+  // Nor while the camera or photo picker is open — the photo comes back to this page.
+  if (document.activeElement?.closest("form[data-keep]") || photoPicking) { refreshTimer = setTimeout(refresh, 1500); return; }
   S = await call("GET", `${oBase}/state`);
   renderDinner();
 }
@@ -228,6 +229,59 @@ function paneShare() {
 const DIETS = [["vegetarian", "Vegetarian"], ["vegan", "Vegan"], ["gluten_free", "Gluten free"], ["dairy_free", "Dairy free"], ["nut_free", "Nut free"], ["contains_nuts", "Contains nuts"], ["halal", "Halal"], ["spicy", "Spicy"]];
 const PAGE_STATE = { processing: ["Reading…", "info"], review: ["Needs review", "warn"], published: ["Live for guests", "good"], failed: ["Couldn't read", "bad"] };
 
+// ------------------------------------------------------------- photo trays
+// A phone's camera takes one shot per tap, so photos collect in a tray until
+// they're sent together. The tray outlives re-renders (live updates redraw the pane).
+const TRAY_MAX = { menu: 12, receipt: 4 }; // the server keeps no more than this per upload
+const trays = { menu: [], receipt: [] };
+let photoPicking = false;
+// Fallback for browsers without the input "cancel" event: give up waiting once the page is back.
+window.addEventListener("focus", () => { if (photoPicking) setTimeout(() => { photoPicking = false; }, 3000); });
+
+function trayHtml(key) {
+  const t = trays[key];
+  const full = t.length >= TRAY_MAX[key];
+  return `<div class="stack" data-tray="${key}">
+    ${t.length ? `<div class="tray">${t.map((p, i) => `<div class="tray-item"><img class="thumb" src="${p.url}" alt="Photo ${i + 1}"><button type="button" class="small" data-trayremove="${i}" aria-label="Remove photo ${i + 1}">✕</button></div>`).join("")}</div>` : ""}
+    ${full ? `<p class="muted">That's the most you can send at once (${TRAY_MAX[key]}). Send these, then add more.</p>` : `<div class="row">
+      <label class="btn grow">${t.length ? "Take another photo" : "Take photo"}<input type="file" accept="image/*" capture="environment" hidden data-trayadd></label>
+      <label class="btn grow">Choose photos<input type="file" accept="image/*" multiple hidden data-trayadd></label>
+    </div>`}
+  </div>`;
+}
+
+// Draw the tray into its placeholder and keep `onChange` (e.g. the send button's label) in step.
+function wireTray(key, onChange) {
+  const box = $(`[data-tray="${key}"]`);
+  if (!box) return;
+  box.outerHTML = trayHtml(key);
+  const fresh = $(`[data-tray="${key}"]`);
+  fresh.querySelectorAll("[data-trayadd]").forEach((inp) => {
+    inp.addEventListener("click", () => { photoPicking = true; });
+    inp.addEventListener("cancel", () => { photoPicking = false; });
+  });
+  fresh.querySelectorAll("[data-trayadd]").forEach((inp) => inp.addEventListener("change", () => {
+    photoPicking = false;
+    const room = TRAY_MAX[key] - trays[key].length;
+    const picked = [...inp.files];
+    if (picked.length > room) toast(`Only ${room} more fit in one go — send these first, then add the rest.`, true);
+    for (const f of picked.slice(0, room)) trays[key].push({ file: f, url: URL.createObjectURL(f) });
+    wireTray(key, onChange);
+  }));
+  fresh.querySelectorAll("[data-trayremove]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const [gone] = trays[key].splice(Number(b.dataset.trayremove), 1);
+    URL.revokeObjectURL(gone.url);
+    wireTray(key, onChange);
+  }));
+  onChange(trays[key].length);
+}
+
+function emptyTray(key) {
+  trays[key].forEach((p) => URL.revokeObjectURL(p.url));
+  trays[key] = [];
+}
+
 function paneMenu() {
   const m = S.menu;
   const cats = m.categories;
@@ -236,8 +290,9 @@ function paneMenu() {
   $("#pane").innerHTML = `
     <section class="card stack">
       <h2>Add menu photos</h2>
+      <p class="muted">Several pages? Take them one after another — they wait here until you send them.</p>
       <form id="up" class="stack">
-        <input id="files" type="file" accept="image/*" capture="environment" multiple aria-label="Menu photos">
+        <div data-tray="menu"></div>
         <div class="row"><select id="kind" style="width:auto"><option value="menu">Menu pages</option><option value="specials">Specials / tonight only</option></select>
         <button class="primary grow" id="upbtn">Upload</button></div>
       </form>
@@ -282,16 +337,19 @@ function paneMenu() {
       <form id="addcat" data-keep class="row" style="margin-top:.75rem"><input id="ncat" class="grow" placeholder="New section name"><button>Add section</button></form>
     </section>`;
 
+  wireTray("menu", (n) => {
+    $("#upbtn").disabled = !n;
+    $("#upbtn").textContent = n > 1 ? `Upload ${n} photos` : "Upload";
+  });
   $("#up").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const files = $("#files").files;
-    if (!files.length) { toast("Choose or take a photo first.", true); return; }
+    if (!trays.menu.length) { toast("Choose or take a photo first.", true); return; }
     const fd = new FormData();
-    for (const f of files) fd.append("files", f);
+    for (const p of trays.menu) fd.append("files", p.file);
     fd.append("kind", $("#kind").value);
     $("#upbtn").disabled = true;
     $("#upbtn").innerHTML = '<span class="spinner"></span> Uploading';
-    try { await call("POST", `${oBase}/pages`, undefined, { form: fd }); toast("Uploaded — reading now"); } catch (err) { fail(err); }
+    try { await call("POST", `${oBase}/pages`, undefined, { form: fd }); emptyTray("menu"); toast("Uploaded — reading now"); } catch (err) { fail(err); }
     refresh();
   });
   $("#additem").addEventListener("submit", async (e) => {
@@ -555,7 +613,7 @@ function paneReceipt() {
       <h2>Itemised receipt</h2>
       <p class="muted">Menu-first: scan it at the end to check against what was recorded. Receipt-first: scan it, add the lines, and let guests claim them.</p>
       ${locked() ? '<p class="muted">Reopen the bill to scan another receipt.</p>' : `
-      <form id="rc" class="stack"><input id="rfiles" type="file" accept="image/*" capture="environment" multiple aria-label="Receipt photo"><button class="primary" id="rbtn">Scan receipt</button></form>
+      <form id="rc" class="stack"><p class="muted">Long receipt? Photograph it in parts, top to bottom.</p><div data-tray="receipt"></div><button class="primary" id="rbtn">Scan receipt</button></form>
       ${S.demo_tools ? '<button data-demoreceipt>Use the sample receipt (demo)</button>' : ""}`}
     </section>
     ${!r ? "" : r.status === "processing" ? `<div class="banner info"><span class="spinner"></span> Reading the receipt…</div>`
@@ -593,14 +651,14 @@ function paneReceipt() {
         <div class="num">${money(lineCalc(l).amount)}</div>
         ${locked() ? "" : `<div class="stack">${l.not_on_receipt_ok ? "" : `<button class="small" data-keep-line="${l.id}">Keep</button>`}<button class="small danger" data-dropline="${l.id}">Remove</button></div>`}</div>`).join("")}
       <p class="muted">Maybe it wasn't served, was on the house, or is on the receipt under another name (use Match… on that line).</p></section>` : ""}`}`;
+  wireTray("receipt", (n) => { $("#rbtn").disabled = !n; });
   $("#rc")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const files = $("#rfiles").files;
-    if (!files.length) { toast("Take or choose a photo of the receipt.", true); return; }
+    if (!trays.receipt.length) { toast("Take or choose a photo of the receipt.", true); return; }
     const fd = new FormData();
-    for (const f of files) fd.append("files", f);
+    for (const p of trays.receipt) fd.append("files", p.file);
     $("#rbtn").disabled = true;
-    try { await call("POST", `${oBase}/receipt`, undefined, { form: fd }); } catch (err) { fail(err); }
+    try { await call("POST", `${oBase}/receipt`, undefined, { form: fd }); emptyTray("receipt"); } catch (err) { fail(err); }
     refresh();
   });
 }
