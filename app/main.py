@@ -65,6 +65,9 @@ async def lifespan(_app: FastAPI):
     logging.basicConfig(level=get_settings().log_level)
     init_db()
     from app.services.demo import register_samples
+    from app.services.restaurants import link_existing
+
+    link_existing()
 
     register_samples()
     _resume_unfinished_work()

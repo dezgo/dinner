@@ -14,6 +14,12 @@ paid back by PayID — with Up Bank spotting the transfers for you.
 1. **Arrive early → New dinner.** Photograph the menu pages (Menu tab), or choose
    the restaurant's PDF menu if it's online — each PDF page is read like a photo.
    The QR code is ready straight away — share it while the pages are still being read.
+   **Been there before?** Type the restaurant's name and the app offers the menu
+   saved last time — guests see it immediately. If the menu has changed, scan it
+   again: matching dishes are updated in place with a note of what changed
+   ("Price was $24.00", "New since last visit"), and saved dishes the new scan
+   didn't find are listed so you can remove them. Each dinner keeps its own copy,
+   so an old bill never changes. Tonight-only specials aren't saved.
 2. **Review each page** as it's read: fix anything flagged (unclear text, a price
    that may belong to another line, a missing price), then **Publish to guests**.
    Guests see published pages immediately; unpublished pages show as "being read".
@@ -71,7 +77,7 @@ uvicorn app.main:app --port 8080
 Open http://127.0.0.1:8080/o. Guests on the same Wi-Fi can use your LAN address
 if you set `PUBLIC_BASE_URL=http://<your-ip>:8080`.
 
-Tests: `pytest` (96 tests, no network). Lint: `ruff check . && ruff format --check .`
+Tests: `pytest` (106 tests, no network). Lint: `ruff check . && ruff format --check .`
 
 ### Server (do-personal)
 
@@ -211,6 +217,7 @@ app/
     references.py   dinner codes and payment references
     orders.py       recording, sharing, joining, per-unit claims
     menu.py         pages, extraction results, corrections
+    restaurants.py  each restaurant's saved menu, loading it, rescans
     extraction.py   Claude photo reading + verification of its output
     reconcile.py    receipt matching
     finalise.py     locking / reopening
@@ -218,6 +225,6 @@ app/
     up.py           Up API client, webhooks, catch-up sync
     demo.py         the demo dinner and sample photos
   static/, templates/   plain JS modules, no build step
-tests/              96 tests
+tests/              106 tests
 deploy/             systemd unit, nginx site, deploy script, server notes
 ```

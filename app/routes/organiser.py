@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.db import get_session, locked_write, session_scope
 from app.models import Dinner, MenuCategory, MenuItem, MenuPage, Participant, Receipt, utcnow
 from app.security import is_organiser, password_ok, rate_limit, require_organiser, sign_in, sign_out
-from app.services import dinners, finalise, menu, payments, reconcile, up
+from app.services import dinners, finalise, menu, payments, reconcile, restaurants, up
 from app.services.billing import active_receipt, bill_for
 from app.services.events import ORGANISER_CHANNEL, audit, broker, touch
 from app.services.images import ImageRejected, split_uploads, store_image
@@ -34,6 +34,12 @@ def _dinner(s: Session, dinner_id: str) -> Dinner:
     if d is None:
         raise HTTPException(404, "Dinner not found.")
     return d
+
+
+def _menu_changed(s: Session, d: Dinner) -> None:
+    """Tell screens the menu moved, and keep the restaurant's saved copy current."""
+    restaurants.save_menu(s, d)
+    touch(s, d, "menu")
 
 
 def _organiser_actor(s: Session, dinner: Dinner) -> Actor:
@@ -122,7 +128,16 @@ def create_dinner(body: dict = Body(...)):
         d = dinners.create_dinner(
             s, body.get("restaurant_name", ""), body.get("my_name") or profile.get("my_name") or "Organiser"
         )
+        restaurants.link(s, d)
+        dishes = restaurants.load_menu(s, d) if body.get("use_saved_menu", True) else 0
+        if dishes:
+            audit(s, d.id, "organiser", f"Started with the saved menu ({dishes} dishes)")
     return {"id": d.id}
+
+
+@api.get("/restaurants")
+def list_restaurants(s: Session = Depends(get_session)):
+    return {"restaurants": restaurants.listing(s)}
 
 
 @api.post("/demo")
@@ -177,6 +192,7 @@ def edit_dinner(dinner_id: str, body: dict = Body(...)):
         d = _dinner(s, dinner_id)
         if "restaurant_name" in body:
             d.restaurant_name = " ".join(str(body["restaurant_name"]).split())[:80]
+            restaurants.link(s, d)
         if "archived" in body and bool(body["archived"]) != d.archived:
             d.archived = bool(body["archived"])
             audit(
@@ -219,7 +235,7 @@ async def upload_pages(dinner_id: str, files: list[UploadFile] = File(...), kind
             page = MenuPage(dinner_id=d.id, kind=kind, image_file=name, sort=start + i)
             s.add(page)
             ids.append(page.id)
-        touch(s, d, "menu")
+        _menu_changed(s, d)
     for pid in ids:
         menu.queue_page(pid)
     return {"pages": ids}
@@ -252,7 +268,7 @@ def page_action(dinner_id: str, page_id: str, action: str):
         else:
             raise HTTPException(404, "Unknown action.")
         s.add(page)
-        touch(s, d, "menu")
+        _menu_changed(s, d)
     if requeue:
         menu.queue_page(page_id)
     return {"ok": True}
@@ -268,8 +284,25 @@ def delete_page(dinner_id: str, page_id: str):
         for item in s.exec(select(MenuItem).where(MenuItem.page_id == page.id)).all():
             _delete_or_hide(s, item)
         s.delete(page)
-        touch(s, d, "menu")
+        _menu_changed(s, d)
     return {"ok": True}
+
+
+@api.post("/d/{dinner_id}/menu/drop-unseen")
+def drop_unseen(dinner_id: str):
+    """After a rescan: remove saved dishes the new scan didn't find, and saved pages left empty."""
+    with locked_write() as s:
+        d = _dinner(s, dinner_id)
+        gone = s.exec(select(MenuItem).where(MenuItem.dinner_id == d.id, MenuItem.from_saved == True)).all()  # noqa: E712
+        for item in gone:
+            _delete_or_hide(s, item)
+        s.flush()
+        for page in s.exec(select(MenuPage).where(MenuPage.dinner_id == d.id, MenuPage.from_saved == True)).all():  # noqa: E712
+            if not s.exec(select(MenuItem.id).where(MenuItem.page_id == page.id)).first():
+                s.delete(page)
+        audit(s, d.id, "organiser", f"Removed {len(gone)} saved dishes not on the new scan")
+        _menu_changed(s, d)
+    return {"removed": len(gone)}
 
 
 def _delete_or_hide(s: Session, item: MenuItem) -> None:
@@ -296,7 +329,7 @@ def add_category(dinner_id: str, body: dict = Body(...)):
         count = len(s.exec(select(MenuCategory.id).where(MenuCategory.dinner_id == d.id)).all())
         cat = MenuCategory(dinner_id=d.id, name=name, sort=count, extras=menu.clean_options(body.get("extras")))
         s.add(cat)
-        touch(s, d, "menu")
+        _menu_changed(s, d)
     return {"id": cat.id}
 
 
@@ -314,7 +347,7 @@ def edit_category(dinner_id: str, cat_id: str, body: dict = Body(...)):
         if "extras" in body:
             cat.extras = menu.clean_options(body["extras"])
         s.add(cat)
-        touch(s, d, "menu")
+        _menu_changed(s, d)
     return {"ok": True}
 
 
@@ -333,7 +366,7 @@ def add_item(dinner_id: str, body: dict = Body(...)):
         menu.update_item(s, item, body)
         item.version = 1
         s.add(item)
-        touch(s, d, "menu")
+        _menu_changed(s, d)
     return {"id": item.id}
 
 
@@ -347,7 +380,7 @@ def edit_item(dinner_id: str, item_id: str, body: dict = Body(...)):
         menu.check_version(item, body.pop("version", None))
         menu.update_item(s, item, body)
         audit(s, d.id, "organiser", f"Edited menu item {item.name}")
-        touch(s, d, "menu")
+        _menu_changed(s, d)
     return {"ok": True, "version": item.version}
 
 
@@ -359,7 +392,7 @@ def delete_item(dinner_id: str, item_id: str):
         if item is None or item.dinner_id != d.id:
             raise HTTPException(404, "Dish not found.")
         _delete_or_hide(s, item)
-        touch(s, d, "menu")
+        _menu_changed(s, d)
     return {"ok": True}
 
 

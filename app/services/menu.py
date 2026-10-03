@@ -14,7 +14,7 @@ from sqlmodel import Session, col, select
 
 from app.db import locked_write, session_scope
 from app.models import Dinner, MenuCategory, MenuItem, MenuPage
-from app.services import jobs
+from app.services import jobs, restaurants
 from app.services.events import audit, touch
 from app.services.extraction import (
     ExtractionError,
@@ -100,6 +100,14 @@ def apply_extraction(page_id: str, result: MenuExtraction) -> None:
         page.flags = list(result.page_notes)
         cache: dict = {}
         order = _next_item_sort(s, dinner.id)
+        # Rescanning a restaurant's saved menu: matching dishes are updated in
+        # place (with a note of what changed) rather than added twice.
+        rescan = page.kind != "specials" and bool(
+            s.exec(
+                select(MenuPage.id).where(MenuPage.dinner_id == dinner.id, col(MenuPage.from_saved).is_(True))
+            ).first()  # noqa: E712
+        )
+        saved = restaurants.saved_items(s, dinner.id) if rescan else {}
         for cat_x in result.categories:
             cat = _category(s, dinner.id, page.id, cat_x.name, cache)
             if cat_x.note and not cat.note:
@@ -120,26 +128,47 @@ def apply_extraction(page_id: str, result: MenuExtraction) -> None:
                 diet = [t for t in x.explicit_diet if t in DIET_TAGS]
                 if vegan["status"] != "marked" and "vegan" in diet:
                     diet.remove("vegan")
+                fields = dict(
+                    name=x.name.strip(),
+                    description=x.description.strip(),
+                    price_cents=x.price_cents,
+                    price_text=x.price_text,
+                    variants=_options(x.variants),
+                    extras=_options(x.extras),
+                    labels=[lbl.strip() for lbl in x.dietary_labels if lbl.strip()],
+                    diet=diet,
+                    vegan=vegan,
+                    flags=flags,
+                )
+                match = saved.pop(restaurants.dish_key(fields["name"]), None)
+                if match is not None:
+                    match.change_note = restaurants.describe_change(match, fields)
+                    for key, value in fields.items():
+                        setattr(match, key, value)
+                    match.page_id, match.category_id, match.from_saved = page.id, cat.id, False
+                    match.version += 1
+                    s.add(match)
+                    continue
                 order += 1
                 s.add(
                     MenuItem(
                         dinner_id=dinner.id,
                         page_id=page.id,
                         category_id=cat.id,
-                        name=x.name.strip(),
-                        description=x.description.strip(),
-                        price_cents=x.price_cents,
-                        price_text=x.price_text,
-                        variants=_options(x.variants),
-                        extras=_options(x.extras),
-                        labels=[lbl.strip() for lbl in x.dietary_labels if lbl.strip()],
-                        diet=diet,
-                        vegan=vegan,
-                        flags=flags,
                         is_special=page.kind == "specials",
+                        change_note="New" if rescan else "",
                         sort=order,
+                        **fields,
                     )
                 )
+        if rescan:
+            # A saved page whose dishes were all found again is just an old photo now.
+            s.flush()
+            for old in s.exec(
+                select(MenuPage).where(MenuPage.dinner_id == dinner.id, col(MenuPage.from_saved).is_(True))
+            ).all():
+                if not s.exec(select(MenuItem.id).where(MenuItem.page_id == old.id)).first():
+                    s.delete(old)
         page.status = "review"
         page.error = None
         s.add(page)

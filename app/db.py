@@ -22,7 +22,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from app import models  # noqa: F401  (registers tables)
 from app.config import get_settings
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 write_lock = threading.RLock()
 _engine: Engine | None = None
@@ -63,8 +63,20 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     with engine.begin() as conn:
         current = conn.exec_driver_sql("PRAGMA user_version").scalar() or 0
-        # Future schema changes go here, gated on `current`, then bump
-        # SCHEMA_VERSION. create_all() already built version 1.
+        # Schema changes go here, gated on `current`, then bump SCHEMA_VERSION.
+        # A fresh database is built complete by create_all(), so each step only
+        # adds what an older database is missing.
+        if 0 < current < 2:
+            # 2: restaurants remember their menu (the table itself comes from create_all).
+            for table, column, kind in (
+                ("dinner", "restaurant_id", "VARCHAR"),
+                ("menupage", "from_saved", "BOOLEAN NOT NULL DEFAULT 0"),
+                ("menuitem", "from_saved", "BOOLEAN NOT NULL DEFAULT 0"),
+                ("menuitem", "change_note", "VARCHAR NOT NULL DEFAULT ''"),
+            ):
+                have = {r[1] for r in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+                if column not in have:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         if current < SCHEMA_VERSION:
             conn.exec_driver_sql(f"PRAGMA user_version={SCHEMA_VERSION}")
 

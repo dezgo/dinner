@@ -41,11 +41,27 @@ class Setting(SQLModel, table=True):
     value: Any = Field(default=None, sa_column=Column(JSON))
 
 
+class Restaurant(SQLModel, table=True):
+    """A place you go back to. Keeps its most recent menu so the next dinner
+    there starts with it already loaded. Each dinner still gets its own copy,
+    so a later change never alters an old bill."""
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    name: str
+    name_key: str = Field(index=True, unique=True)  # lower-cased, spaces collapsed
+    # {"pages": [...], "categories": [...], "items": [...]} — see services/restaurants.py
+    menu: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    menu_dinner_id: str | None = None  # the dinner the saved menu came from
+    menu_updated_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class Dinner(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     code: str = Field(index=True, unique=True)  # e.g. DIN7 — prefix of every reference
     public_token: str = Field(default_factory=new_token, index=True, unique=True)
     restaurant_name: str = ""
+    restaurant_id: str | None = Field(default=None, index=True)
     is_demo: bool = False
     status: str = "open"  # open | finalised
     revision: int = 0  # bumped on every change; clients re-fetch when it moves
@@ -101,6 +117,7 @@ class MenuPage(SQLModel, table=True):
     error: str | None = None
     legend: list = json_col([])  # [{symbol, meaning}] as printed on the menu
     flags: list = json_col([])  # page-level notes, e.g. "bottom of page cut off"
+    from_saved: bool = False  # copied from the restaurant's saved menu, not scanned tonight
     sort: int = 0
     created_at: datetime = Field(default_factory=utcnow)
 
@@ -135,6 +152,10 @@ class MenuItem(SQLModel, table=True):
     unavailable: bool = False
     is_special: bool = False
     source: str = "extracted"  # extracted | manual
+    # Copied from the restaurant's saved menu and not (yet) found on a fresh scan.
+    from_saved: bool = False
+    # What a fresh scan changed compared with the saved menu, e.g. "Price was $24.00", "New".
+    change_note: str = ""
     sort: int = 0
     version: int = 1
 

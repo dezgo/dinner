@@ -20,7 +20,7 @@ from app.models import (
     Participant,
     Shortlist,
 )
-from app.services import payments
+from app.services import payments, restaurants
 from app.services.billing import active_participants, active_receipt, bill_for, line_allocations, live_lines
 from app.services.menu import menu_items
 from app.services.orders import serialize_line
@@ -71,6 +71,8 @@ def _item(i: MenuItem) -> dict:
         "unavailable": i.unavailable,
         "is_special": i.is_special,
         "source": i.source,
+        "from_saved": i.from_saved,
+        "change_note": i.change_note,
         "version": i.version,
     }
 
@@ -91,6 +93,7 @@ def _menu(s: Session, dinner: Dinner, organiser: bool) -> dict:
                 "status": p.status,
                 "image": p.image_file,
                 "legend": p.legend,
+                "from_saved": p.from_saved,
                 **({"error": p.error, "flags": p.flags} if organiser else {}),
             }
             for p in visible_pages
@@ -171,6 +174,7 @@ def organiser_state(s: Session, dinner: Dinner) -> dict:
     me = s.get(Participant, dinner.organiser_participant_id) if dinner.organiser_participant_id else None
     state = guest_state(s, dinner, me, organiser=True)
     state["menu"] = _menu(s, dinner, organiser=True)
+    state["restaurant"] = restaurants.summary(s, dinner)
     receipt = active_receipt(s, dinner.id)
     state["receipt"] = serialize_receipt(s, receipt) if receipt else None
     state["payment_statuses"] = payments.statuses(s, dinner)

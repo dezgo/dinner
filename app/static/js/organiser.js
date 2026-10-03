@@ -19,8 +19,11 @@ async function call(method, url, body, opts) {
 const fail = (e) => toast(explainError(e), true);
 
 // ================================================================ home
+const dayOf = (iso) => new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+const nameKey = (t) => String(t || "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+
 async function home() {
-  const data = await call("GET", "/api/o/dinners");
+  const [data, known] = await Promise.all([call("GET", "/api/o/dinners"), call("GET", "/api/o/restaurants")]);
   app.innerHTML = `
     <div class="wrap">
       <div class="row between" style="margin:1rem 0"><h1 style="margin:0">Dinners</h1><a href="/o/settings" class="btn">Settings</a></div>
@@ -28,7 +31,9 @@ async function home() {
       ${data.review_count ? `<div class="banner warn">${data.review_count} incoming transfer${data.review_count > 1 ? "s need" : " needs"} your review — open the dinner's Payments tab.</div>` : ""}
       <form id="new" class="card stack">
         <h2>New dinner</h2>
-        <div><label for="rn">Restaurant (optional)</label><input id="rn" maxlength="80" placeholder="e.g. Lantern Kitchen"></div>
+        <div><label for="rn">Restaurant</label><input id="rn" maxlength="80" placeholder="e.g. Lantern Kitchen" list="rlist" autocomplete="off">
+          <datalist id="rlist">${known.restaurants.map((r) => `<option value="${esc(r.name)}">`).join("")}</datalist></div>
+        <div id="rsaved"></div>
         <button class="primary block">Start dinner</button>
       </form>
       <section>
@@ -47,9 +52,18 @@ async function home() {
       </section>
       <p class="center"><button class="small" id="out">Sign out</button></p>
     </div>`;
+  // Been here before? Offer the menu saved last time.
+  $("#rn").addEventListener("input", () => {
+    const r = known.restaurants.find((x) => nameKey(x.name) === nameKey($("#rn").value));
+    $("#rsaved").innerHTML = r?.dishes ? `<label class="check"><input type="checkbox" id="usesaved" checked>
+      Start with the menu saved ${dayOf(r.menu_updated_at)} (${r.dishes} dishes) — guests can see it straight away</label>` : "";
+  });
   $("#new").addEventListener("submit", async (e) => {
     e.preventDefault();
-    try { const r = await call("POST", "/api/o/dinners", { restaurant_name: $("#rn").value }); location.href = `/o/d/${r.id}`; } catch (err) { fail(err); }
+    try {
+      const r = await call("POST", "/api/o/dinners", { restaurant_name: $("#rn").value, use_saved_menu: $("#usesaved")?.checked ?? true });
+      location.href = `/o/d/${r.id}`;
+    } catch (err) { fail(err); }
   });
   $("#demo").addEventListener("click", async (e) => {
     e.target.disabled = true;
@@ -287,9 +301,19 @@ function paneMenu() {
   const cats = m.categories;
   const itemsFor = (pid) => m.items.filter((i) => i.page_id === pid);
   const manual = m.items.filter((i) => !i.page_id);
+  const fromSaved = m.pages.some((p) => p.from_saved);
+  const rescanned = m.pages.some((p) => !p.from_saved && p.kind === "menu" && ["review", "published"].includes(p.status));
+  const unseen = m.items.filter((i) => i.from_saved);
+  const savedNote = !fromSaved ? "" : !rescanned
+    ? `<div class="banner info">This is the menu saved from your last visit${S.restaurant?.menu_updated_at ? ` (${dayOf(S.restaurant.menu_updated_at)})` : ""} — guests can already see it.
+        If the menu in front of you looks different, photograph it again: matching dishes are updated, new ones added, and each change is noted.</div>`
+    : unseen.length ? `<div class="banner warn"><b>${unseen.length} saved dish${unseen.length > 1 ? "es weren't" : " wasn't"} on today's scan:</b> ${unseen.map((i) => esc(i.name)).join(", ")}.
+        If you photographed the whole menu, ${unseen.length > 1 ? "they've" : "it's"} probably gone.
+        <div class="row" style="margin-top:.5rem"><button class="small primary" data-dropunseen>Remove ${unseen.length > 1 ? "them" : "it"}</button></div></div>` : "";
   $("#pane").innerHTML = `
+    ${savedNote}
     <section class="card stack">
-      <h2>Add menu photos</h2>
+      <h2>${fromSaved ? "Scan the menu again" : "Add menu photos"}</h2>
       <p class="muted">Several pages? Take them one after another — they wait here until you send them. Found the menu online? Choose its PDF instead — every page is read.</p>
       <form id="up" class="stack">
         <div data-tray="menu"></div>
@@ -306,7 +330,7 @@ function paneMenu() {
       return `<section class="card">
         <div class="row">
           ${p.image ? `<a href="${gBase()}/image/${esc(p.image)}" target="_blank" rel="noopener"><img class="thumb" src="${gBase()}/image/${esc(p.image)}" alt="Menu page"></a>` : ""}
-          <div class="grow"><b>${p.kind === "specials" ? "Specials" : "Menu page"}</b> <span class="state ${tone}">${p.status === "processing" ? '<span class="spinner"></span> ' : ""}${label}</span>
+          <div class="grow"><b>${p.kind === "specials" ? "Specials" : p.from_saved ? "Saved menu page" : "Menu page"}</b> <span class="state ${tone}">${p.status === "processing" ? '<span class="spinner"></span> ' : ""}${label}</span>
             <div class="muted">${items.length} dishes${flagged ? ` · <b>${flagged} flagged</b>` : ""}</div>
             ${p.error ? `<div class="banner bad">${esc(p.error)}</div>` : ""}
             ${(p.flags || []).map((f) => `<div class="muted">⚠ ${esc(f)}</div>`).join("")}</div>
@@ -386,6 +410,7 @@ function itemRow(i) {
     <div class="grow">
       <b>${esc(i.name)}</b> <span class="muted">${esc(cat?.name || "")}</span>
       <div class="muted">${price}${i.price_text ? ` · printed “${esc(i.price_text)}”` : ""}</div>
+      ${i.change_note ? `<div><span class="badge special">${i.change_note === "New" ? "New since last visit" : esc(i.change_note)}</span></div>` : ""}
       <div class="badges">${i.labels.map((l) => `<span class="badge">${esc(l)}</span>`).join("")}
         ${v === "marked" ? '<span class="badge vegan">Vegan (menu)</span>' : v === "on_request" ? '<span class="badge vegan">Vegan on request</span>' : v === "possible" ? '<span class="badge maybe">Possibly vegan (AI)</span>' : ""}
         ${i.unavailable ? '<span class="badge off">Unavailable</span>' : ""}${i.is_special ? '<span class="badge special">Special</span>' : ""}</div>
@@ -818,6 +843,7 @@ document.addEventListener("click", async (e) => {
   if (d.dtab) { dtab = d.dtab; try { sessionStorage.setItem(`dt_otab_${dinnerId}`, dtab); } catch { /* fine */ } renderDinner(); window.scrollTo(0, 0); }
   else if (d.copy !== undefined) copy(d.copy, "Link");
   else if (d.page) act(() => call("POST", `${oBase}/pages/${d.page}/${d.act}`));
+  else if (d.dropunseen !== undefined) act(() => call("POST", `${oBase}/menu/drop-unseen`));
   else if (d.delpage) { if (confirmSheet("Delete this page and its dishes? Dishes already ordered are kept (hidden from the menu).", () => act(() => call("DELETE", `${oBase}/pages/${d.delpage}`)))) return; }
   else if (d.edititem) { openEditors.has(d.edititem) ? openEditors.delete(d.edititem) : openEditors.add(d.edititem); renderDinner(); }
   else if (d.avail) { const i = S.menu.items.find((x) => x.id === d.avail); act(() => call("PATCH", `${oBase}/items/${i.id}`, { version: i.version, unavailable: !i.unavailable })); }
