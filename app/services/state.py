@@ -20,7 +20,7 @@ from app.models import (
     Participant,
     Shortlist,
 )
-from app.services import payments, restaurants
+from app.services import menu_share, payments, restaurants
 from app.services.billing import active_participants, active_receipt, bill_for, line_allocations, live_lines
 from app.services.menu import menu_items
 from app.services.orders import serialize_line
@@ -120,6 +120,11 @@ def _people(people: list[Participant], organiser: bool) -> list[dict]:
     return out
 
 
+def guest_menu(s: Session, dinner: Dinner) -> dict:
+    """The menu as guests see it: published pages plus dishes typed in by hand."""
+    return _menu(s, dinner, organiser=False)
+
+
 def guest_state(s: Session, dinner: Dinner, me: Participant | None, *, organiser: bool = False) -> dict:
     people = active_participants(s, dinner.id)
     lines = live_lines(s, dinner.id)
@@ -134,6 +139,7 @@ def guest_state(s: Session, dinner: Dinner, me: Participant | None, *, organiser
         "organiser": organiser,
         "participants": _people(people, organiser),
         "menu": _menu(s, dinner, organiser=False),
+        "menu_share": menu_share.path_for(dinner.id),
         "lines": [serialize_line(ln, by_line.get(ln.id, [])) for ln in lines],
         "bill": bill.as_dict(),
         "shortlist": [],

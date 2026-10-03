@@ -227,7 +227,8 @@ function renderMenu() {
         ${g.c.extras?.length ? `<div class="cat-note">Add: ${g.c.extras.map((e) => `${esc(e.label)} ${e.price_cents != null ? money(e.price_cents) : ""}`).join(" · ")}</div>` : ""}
         <div class="card">${g.items.map(dishHtml).join("")}</div>`).join("")}
       ${m.legend.length ? `<p class="muted" style="margin-top:1rem">Menu key: ${uniqueLegend(m.legend).map((e) => `<b>${esc(e.symbol)}</b> ${esc(e.meaning)}`).join(" · ")}</p>` : ""}
-      <section class="center"><button data-manual>+ Something not on the menu</button></section>
+      <section class="center stack"><button data-manual>+ Something not on the menu</button>
+        ${m.items.length ? `<div><a class="btn" href="${esc(S.menu_share)}?show=1">Show the restaurant their menu</a></div>` : ""}</section>
     </div>`;
   watchSections();
 }

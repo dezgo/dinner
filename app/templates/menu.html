@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} — menu{% endblock %}
+{% block body %}
+<main class="showcase wrap">
+  {% if back %}<a class="btn small showcase-back" href="{{ back }}">← Back</a>{% endif %}
+  <header class="showcase-head">
+    <h1>{{ name }}</h1>
+    <p class="muted">Menu</p>
+  </header>
+  {% if not sections %}<p class="center muted">The menu hasn't been added yet.</p>{% endif %}
+  {% for c in sections %}
+  <section class="showcase-section">
+    <h2>{{ c.name }}</h2>
+    {% if c.note %}<p class="showcase-note">{{ c.note }}</p>{% endif %}
+    {% if c.extras %}<p class="showcase-note">Add: {% for e in c.extras %}{{ e.label }}{% if e.price_cents is not none %} {{ e.price_cents|money }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    {% for i in c["items"] %}
+    <article class="showcase-dish{% if i.unavailable %} off{% endif %}">
+      <div class="showcase-line">
+        <h3>{{ i.name }}{% for l in i.labels %} <span class="showcase-label">{{ l }}</span>{% endfor %}{% if i.is_special %} <span class="badge special">Tonight</span>{% endif %}</h3>
+        {% if not i.variants and i.price_cents is not none %}<span class="showcase-price">{{ i.price_cents|money }}</span>{% endif %}
+      </div>
+      {% if i.description %}<p>{{ i.description }}</p>{% endif %}
+      {% if i.variants %}<p class="showcase-opts">{% for v in i.variants %}{{ v.label }} {{ v.price_cents|money if v.price_cents is not none else "" }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+      {% if i.extras %}<p class="showcase-opts">{% for e in i.extras %}+ {{ e.label }}{% if e.price_cents is not none %} {{ e.price_cents|money }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    </article>
+    {% endfor %}
+  </section>
+  {% endfor %}
+  {% if legend %}<p class="showcase-key">{% for e in legend %}<b>{{ e.symbol }}</b> {{ e.meaning }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  {% if qr %}
+  <aside class="showcase-qr">
+    <div class="qr-box">{{ qr|safe }}</div>
+    <p><b>Scan to see this menu on your phone</b><br><span class="muted">Just the menu, nothing else from our table.</span></p>
+  </aside>
+  {% endif %}
+  <footer class="center muted showcase-foot">Made with Dinner Tab</footer>
+</main>
+{% endblock %}

@@ -10,7 +10,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from sqlmodel import Session, select
 
-from app.db import get_session, locked_write
+from app.config import get_settings
+from app.db import get_session, locked_write, session_scope
 from app.models import MenuItem, MenuPage, Participant, Receipt, Shortlist
 from app.security import (
     GuestContext,
@@ -21,10 +22,11 @@ from app.security import (
     participant_from_request,
     rate_limit,
 )
-from app.services import dinners, orders, payments
+from app.services import dinners, menu_share, orders, payments
 from app.services.events import broker, dinner_channel
 from app.services.images import image_path
-from app.services.state import guest_state
+from app.services.qr import qr_svg
+from app.services.state import guest_menu, guest_state
 from app.templating import render
 
 router = APIRouter()
@@ -72,6 +74,30 @@ def recover(public_token: str, recovery: str, request: Request):
         issue_guest_session(response, dinner, p)
         s.add(p)
     return response
+
+
+@router.get("/m/{token}")
+def shared_menu(token: str, request: Request, show: bool = False):
+    """The read-only menu for restaurant staff. `show=1` is the in-person version:
+    a QR code for their own phone, and (for people at the dinner) a way back."""
+    with session_scope() as s:
+        dinner = menu_share.dinner_for(s, token)
+        menu = guest_menu(s, dinner)
+        back = None
+        if show and (is_organiser(request) or participant_from_request(s, request, dinner) is not None):
+            back = f"/d/{dinner.public_token}"
+    base = get_settings().public_base_url.rstrip("/") or str(request.base_url).rstrip("/")
+    return render(
+        request,
+        "menu.html",
+        {
+            "name": dinner.restaurant_name or "Menu",
+            "sections": menu_share.sections(menu),
+            "legend": menu_share.legend(menu),
+            "back": back,
+            "qr": qr_svg(f"{base}/m/{token}").decode() if show else None,
+        },
+    )
 
 
 # ---------------------------------------------------------------------- api

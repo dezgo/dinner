@@ -248,3 +248,20 @@ def test_pdf_pages_are_read_as_pdf_and_photos_as_photos(dinner):
     assert len(seen) == 3
     assert all(p is not None and p.startswith(b"%PDF") for p in seen[:2])
     assert seen[2] is None
+
+
+def test_shared_menu_shows_the_menu_and_nothing_else(dinner):
+    from tests.conftest import new_client
+
+    dinner.add_item("Pavlova", 1600, description="Berries and cream")
+    helen = dinner.guest("Helen Q")
+    path = dinner.gstate(helen)["menu_share"]
+    stranger = new_client()
+    page = stranger.get(path + "?show=1")
+    assert page.status_code == 200
+    assert "Pavlova" in page.text and "$16.00" in page.text and "Berries and cream" in page.text
+    assert "Helen Q" not in page.text and dinner.token not in page.text  # no names, no way into the dinner
+    assert "<svg" in page.text  # the QR for their own phone
+    assert dinner.token in helen.get(path + "?show=1").text  # someone at the dinner gets a way back
+    assert "<svg" not in stranger.get(path).text
+    assert stranger.get(path + "x").status_code == 404

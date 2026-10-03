@@ -239,3 +239,30 @@ details > summary { cursor: pointer; padding: .4rem 0; color: var(--accent); }
 .staff-name span { font-weight: 500; }
 .staff-sub { font-size: 1.2rem; margin-top: .2rem; }
 .staff-who { font-size: .95rem; color: var(--ink-2); margin-top: .3rem; }
+
+/* ---------- showcase: the menu as the restaurant sees it ---------- */
+.showcase { padding-top: 1.25rem; padding-bottom: 2rem; }
+.showcase-back { margin-bottom: .5rem; }
+.showcase-head { text-align: center; padding: 1.25rem 0 .75rem; border-bottom: 2px solid var(--ink); margin-bottom: .5rem; }
+.showcase-head h1 { font-family: Georgia, "Times New Roman", serif; font-size: 2.1rem; letter-spacing: .01em; margin: 0; }
+.showcase-head p { text-transform: uppercase; letter-spacing: .25em; font-size: .78rem; margin: .35rem 0 0; }
+.showcase-section { margin: 1.6rem 0 0; }
+.showcase-section h2 { font-family: Georgia, "Times New Roman", serif; font-size: 1.15rem; text-transform: uppercase;
+  letter-spacing: .14em; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: .35rem; margin-bottom: .2rem; }
+.showcase-note { color: var(--ink-2); font-size: .9rem; font-style: italic; margin: .3rem 0; }
+.showcase-dish { padding: .7rem 0; border-bottom: 1px dotted var(--line); }
+.showcase-dish:last-child { border-bottom: 0; }
+.showcase-dish.off h3 { text-decoration: line-through; color: var(--ink-2); }
+.showcase-line { display: flex; gap: .75rem; align-items: baseline; justify-content: space-between; }
+.showcase-dish h3 { font-size: 1.02rem; margin: 0; font-weight: 650; }
+.showcase-dish p { margin: .2rem 0 0; color: var(--ink-2); }
+.showcase-price { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.showcase-label { font-size: .7rem; font-weight: 700; color: var(--accent); letter-spacing: .04em; vertical-align: .1em; }
+.showcase-opts { font-size: .9rem; }
+.showcase-key { margin-top: 1.5rem; font-size: .85rem; color: var(--ink-2); text-align: center; }
+.showcase-qr { display: flex; gap: 1rem; align-items: center; margin: 2rem 0 0; padding: 1rem; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--surface); }
+.showcase-qr .qr-box { flex: none; width: 112px; background: #fff; padding: 6px; border-radius: 10px; }
+.showcase-qr .qr-box svg { display: block; width: 100%; height: auto; }
+.showcase-qr p { margin: 0; }
+.showcase-foot { font-size: .75rem; margin-top: 1.5rem; }
