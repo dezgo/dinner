@@ -587,7 +587,8 @@ function renderMine() {
   app.innerHTML = `
     <div class="wrap">
       ${lockedBanner()}
-      <h1 style="margin-top:1rem">My order</h1>
+      <div class="row between" style="margin-top:1rem"><h1 style="margin:0">My order</h1>
+        ${mineLines.length ? `<button class="primary" data-staff="mine">Show to staff</button>` : ""}</div>
       ${outbox.size ? `<div class="banner warn">${outbox.size} change${outbox.size > 1 ? "s" : ""} waiting to send${outbox.failing ? " — no connection yet, will retry" : ""}.</div>` : ""}
       <div class="card">
         ${mineLines.length ? mineLines.map((l) => lineRow(l, { forMe: true })).join("") : `<p class="muted">Nothing here yet. Find a dish on the menu and tap <b>Add to order</b>. Shortlisting doesn't add anything to the bill.</p>`}
@@ -605,6 +606,37 @@ function renderMine() {
     </div>`;
 }
 
+// ------------------------------------------------------------ staff view
+// Big, plain and price-free: hold the phone up while ordering. Shared dishes
+// say who they're with, so the next person doesn't order them again.
+let wake = null;
+function staffView(which) {
+  const mine = which === "mine";
+  const lines = S.lines.filter((l) => l.kind === "item" && (!mine || l.allocations.some((a) => a.participant_id === me()) || (l.created_by === me() && !l.allocations.length)));
+  const row = (l) => {
+    const units = l.split_mode === "units";
+    const qty = mine && units ? l.allocations.find((a) => a.participant_id === me())?.weight || l.quantity : l.quantity;
+    const others = l.allocations.filter((a) => a.participant_id !== me()).map((a) => nameOf(a.participant_id));
+    const shared = mine && !units && others.length ? `Shared with ${others.map(esc).join(", ")}` : "";
+    return `<div class="staff-line"><span class="staff-qty">${qty}×</span><div class="grow">
+      <div class="staff-name">${esc(l.name)}${l.variant_label ? ` <span>· ${esc(l.variant_label)}</span>` : ""}</div>
+      ${l.extras.length ? `<div class="staff-sub">+ ${l.extras.map((e) => esc(e.label)).join(", ")}</div>` : ""}
+      ${l.note ? `<div class="staff-sub">“${esc(l.note)}”</div>` : ""}
+      ${shared ? `<div class="staff-who">${shared}</div>` : ""}</div></div>`;
+  };
+  const el = document.createElement("div");
+  el.className = "staff-view";
+  el.setAttribute("role", "dialog");
+  el.innerHTML = `
+    <div class="row between"><div class="muted">${mine ? esc(S.me.name) : "Whole table"}</div><button data-close>Done</button></div>
+    ${lines.map(row).join("") || '<p class="muted">Nothing added yet.</p>'}`;
+  const close = () => { el.remove(); wake?.release?.().catch(() => {}); wake = null; };
+  el.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) close(); });
+  document.body.append(el);
+  // Keep the screen on while it's being read, where the phone allows it.
+  navigator.wakeLock?.request("screen").then((w) => { wake = w; }).catch(() => {});
+}
+
 // ----------------------------------------------------------------- table
 function renderTable() {
   const b = S.bill;
@@ -612,7 +644,8 @@ function renderTable() {
   app.innerHTML = `
     <div class="wrap">
       ${lockedBanner()}
-      <h1 style="margin-top:1rem">The table</h1>
+      <div class="row between" style="margin-top:1rem"><h1 style="margin:0">The table</h1>
+        ${S.lines.some((l) => l.kind === "item") ? `<button data-staff="table">Show to staff</button>` : ""}</div>
       <p class="muted">Everything recorded so far. Join a shared dish here rather than recording it twice.</p>
       ${unclaimed.length ? `<div class="banner warn">${unclaimed.length} item${unclaimed.length > 1 ? "s haven't" : " hasn't"} been claimed yet.</div>` : ""}
       <div class="card">${S.lines.length ? S.lines.map((l) => lineRow(l, { forMe: false })).join("") : '<p class="muted">Nothing recorded yet.</p>'}</div>
@@ -690,7 +723,7 @@ const PAYID_LABEL = { phone: "mobile number", email: "email", abn: "ABN", org_id
 
 // ---------------------------------------------------------------- events
 document.addEventListener("click", async (e) => {
-  const t = e.target.closest("[data-tab],[data-gotab],[data-filters],[data-clearprice],[data-filter],[data-jump],[data-toggle],[data-star],[data-record],[data-photo],[data-manual],[data-join],[data-leave],[data-remove],[data-edit],[data-copy],[data-sent],[data-rename],[data-receipt]");
+  const t = e.target.closest("[data-tab],[data-gotab],[data-filters],[data-clearprice],[data-filter],[data-jump],[data-toggle],[data-star],[data-record],[data-photo],[data-manual],[data-join],[data-leave],[data-remove],[data-staff],[data-edit],[data-copy],[data-sent],[data-rename],[data-receipt]");
   if (!t || !S) return;
   const d = t.dataset;
   if (d.tab) setTab(d.tab);
@@ -712,6 +745,7 @@ document.addEventListener("click", async (e) => {
   } else if (d.photo) showPhoto(d.photo);
   else if (d.manual) manualSheet();
   else if (d.join) { const l = S.lines.find((x) => x.id === d.join); if (l) joinSheet(l); }
+  else if (d.staff) staffView(d.staff);
   else if (d.remove) { const l = S.lines.find((x) => x.id === d.remove); if (l) removeSheet(l); }
   else if (d.leave) { const l = S.lines.find((x) => x.id === d.leave); if (l) leave(l); }
   else if (d.edit) { const l = S.lines.find((x) => x.id === d.edit); if (l) editSheet(l); }

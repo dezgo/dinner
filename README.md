@@ -29,6 +29,9 @@ paid back by PayID — with Up Bank spotting the transfers for you.
    Filter button, a "Jump to" section bar and an "Aa" display button (text size,
    light/dark) sit above it. Shortlist, and tap **Add to order**. Adding only keeps track of what
    they ordered with staff; it doesn't send anything to the kitchen.
+   **Show to staff** (My order, or the Table tab for everyone) turns the order
+   into a big, price-free list to hold up while ordering; shared dishes say
+   who they're with so nobody orders them twice. The screen stays on meanwhile.
 4. **Shared dishes** are recorded once. Anyone else tapping the same dish is asked
    to *join* it, with a preview of how everyone's part changes. Several of the
    same thing (e.g. three pints) can be claimed per unit.

@@ -228,3 +228,14 @@ details > summary { cursor: pointer; padding: .4rem 0; color: var(--accent); }
 /* Keep the bottom tabs thumb-sized on tablets and desktops. */
 .tabs { justify-content: center; }
 .tabs button { max-width: 180px; }
+
+/* ---------- staff view: held up to the waiter ---------- */
+.staff-view { position: fixed; inset: 0; z-index: 70; background: var(--surface); overflow-y: auto;
+  padding: calc(1rem + env(safe-area-inset-top)) 20px calc(1.5rem + env(safe-area-inset-bottom)); }
+.staff-line { display: flex; gap: .9rem; align-items: baseline; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.staff-line:last-child { border-bottom: 0; }
+.staff-qty { font-size: 1.6rem; font-weight: 800; min-width: 2.6rem; font-variant-numeric: tabular-nums; }
+.staff-name { font-size: 1.6rem; font-weight: 700; line-height: 1.25; }
+.staff-name span { font-weight: 500; }
+.staff-sub { font-size: 1.2rem; margin-top: .2rem; }
+.staff-who { font-size: .95rem; color: var(--ink-2); margin-top: .3rem; }
