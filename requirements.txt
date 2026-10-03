@@ -9,4 +9,5 @@ itsdangerous==2.2.0
 cryptography==50.0.2
 qrcode[pil]==8.2
 pillow==12.3.0
+pypdfium2==5.13.0
 anthropic==1.10.0

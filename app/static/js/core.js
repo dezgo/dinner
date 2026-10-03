@@ -199,30 +199,40 @@ export function explainError(e) {
   return e?.message || "Something went wrong.";
 }
 
-// Theme and text size controls (per device).
+// Theme and text size controls (per device), tucked behind one "Aa" button.
 export function prefsControls(root) {
+  const curFs = () => parseInt(getComputedStyle(document.documentElement).getPropertyValue("--fs"), 10) || 17;
   const setFs = (delta) => {
-    const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--fs"), 10) || 17;
-    const next = Math.max(14, Math.min(26, cur + delta));
+    const next = Math.max(14, Math.min(26, curFs() + delta));
     document.documentElement.style.setProperty("--fs", next + "px");
     try { localStorage.setItem("dt_fs", String(next)); } catch { /* fine */ }
   };
-  const cycleTheme = () => {
+  const isDark = () => {
     const cur = document.documentElement.dataset.theme;
-    const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-    const next = dark ? "light" : "dark";
+    return cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  };
+  const setTheme = (next) => {
     document.documentElement.dataset.theme = next;
     try { localStorage.setItem("dt_theme", next); } catch { /* fine */ }
   };
-  root.innerHTML = `
-    <button class="iconbtn" data-fs="-1" aria-label="Smaller text">A−</button>
-    <button class="iconbtn" data-fs="1" aria-label="Larger text">A+</button>
-    <button class="iconbtn" data-theme-toggle aria-label="Switch light or dark">◐</button>`;
+  root.innerHTML = `<button class="iconbtn" data-prefs aria-label="Text size and light or dark">Aa</button>`;
   root.addEventListener("click", (e) => {
-    const b = e.target.closest("button");
-    if (!b) return;
-    if (b.dataset.fs) setFs(parseInt(b.dataset.fs, 10));
-    if (b.hasAttribute("data-theme-toggle")) cycleTheme();
+    if (!e.target.closest("[data-prefs]")) return;
+    const s = sheet(`
+      <div class="row between"><h2>Display</h2><button class="small" data-close>Done</button></div>
+      <div class="row between" style="margin-top:.75rem"><span>Text size</span>
+        <span class="stepper"><button type="button" data-fs="-1" aria-label="Smaller text">A−</button><button type="button" data-fs="1" aria-label="Larger text">A+</button></span></div>
+      <div class="row between" style="margin-top:.75rem"><span>Appearance</span>
+        <span class="row" style="gap:.3rem"><button type="button" class="chip" data-theme-set="light">Light</button><button type="button" class="chip" data-theme-set="dark">Dark</button></span></div>
+      <p class="muted" style="margin-top:.75rem">Only changes this phone.</p>`);
+    const mark = () => s.el.querySelectorAll("[data-theme-set]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.themeSet === "dark") === isDark())));
+    mark();
+    s.el.addEventListener("click", (ev) => {
+      const b = ev.target.closest("button");
+      if (!b) return;
+      if (b.dataset.fs) setFs(parseInt(b.dataset.fs, 10));
+      if (b.dataset.themeSet) { setTheme(b.dataset.themeSet); mark(); }
+    });
   });
 }
 

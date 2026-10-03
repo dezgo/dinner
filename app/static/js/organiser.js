@@ -242,10 +242,10 @@ function trayHtml(key) {
   const t = trays[key];
   const full = t.length >= TRAY_MAX[key];
   return `<div class="stack" data-tray="${key}">
-    ${t.length ? `<div class="tray">${t.map((p, i) => `<div class="tray-item"><img class="thumb" src="${p.url}" alt="Photo ${i + 1}"><button type="button" class="small" data-trayremove="${i}" aria-label="Remove photo ${i + 1}">✕</button></div>`).join("")}</div>` : ""}
+    ${t.length ? `<div class="tray">${t.map((p, i) => `<div class="tray-item">${p.pdf ? `<div class="thumb pdf-thumb" title="${esc(p.file.name)}">PDF</div>` : `<img class="thumb" src="${p.url}" alt="Photo ${i + 1}">`}<button type="button" class="small" data-trayremove="${i}" aria-label="Remove photo ${i + 1}">✕</button></div>`).join("")}</div>` : ""}
     ${full ? `<p class="muted">That's the most you can send at once (${TRAY_MAX[key]}). Send these, then add more.</p>` : `<div class="row">
       <label class="btn grow">${t.length ? "Take another photo" : "Take photo"}<input type="file" accept="image/*" capture="environment" hidden data-trayadd></label>
-      <label class="btn grow">Choose photos<input type="file" accept="image/*" multiple hidden data-trayadd></label>
+      <label class="btn grow">Choose photos or PDF<input type="file" accept="image/*,application/pdf,.pdf" multiple hidden data-trayadd></label>
     </div>`}
   </div>`;
 }
@@ -265,7 +265,7 @@ function wireTray(key, onChange) {
     const room = TRAY_MAX[key] - trays[key].length;
     const picked = [...inp.files];
     if (picked.length > room) toast(`Only ${room} more fit in one go — send these first, then add the rest.`, true);
-    for (const f of picked.slice(0, room)) trays[key].push({ file: f, url: URL.createObjectURL(f) });
+    for (const f of picked.slice(0, room)) trays[key].push({ file: f, url: URL.createObjectURL(f), pdf: f.type === "application/pdf" || /\.pdf$/i.test(f.name) });
     wireTray(key, onChange);
   }));
   fresh.querySelectorAll("[data-trayremove]").forEach((b) => b.addEventListener("click", (e) => {
@@ -290,7 +290,7 @@ function paneMenu() {
   $("#pane").innerHTML = `
     <section class="card stack">
       <h2>Add menu photos</h2>
-      <p class="muted">Several pages? Take them one after another — they wait here until you send them.</p>
+      <p class="muted">Several pages? Take them one after another — they wait here until you send them. Found the menu online? Choose its PDF instead — every page is read.</p>
       <form id="up" class="stack">
         <div data-tray="menu"></div>
         <div class="row"><select id="kind" style="width:auto"><option value="menu">Menu pages</option><option value="specials">Specials / tonight only</option></select>
@@ -339,7 +339,7 @@ function paneMenu() {
 
   wireTray("menu", (n) => {
     $("#upbtn").disabled = !n;
-    $("#upbtn").textContent = n > 1 ? `Upload ${n} photos` : "Upload";
+    $("#upbtn").textContent = n > 1 ? `Upload ${n} files` : "Upload";
   });
   $("#up").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -912,8 +912,9 @@ function undoSheet(payId) {
 function setConn(ok) {
   const el = $("#conn");
   el.classList.remove("hidden");
-  el.className = ok ? "conn" : "conn off";
-  el.textContent = ok ? "Live" : "Reconnecting";
+  // Only worth a word when something's wrong.
+  el.className = ok ? "conn hidden" : "conn off";
+  el.textContent = ok ? "" : "Reconnecting";
 }
 
 (async () => {

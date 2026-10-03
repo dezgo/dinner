@@ -162,6 +162,40 @@ def test_non_images_are_rejected(dinner):
     assert r.status_code == 422
 
 
+def pdf(pages: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    imgs = [Image.new("RGB", (300, 420), (255, 255, 255)) for _ in range(pages)]
+    imgs[0].save(buf, "PDF", save_all=True, append_images=imgs[1:])
+    return buf.getvalue()
+
+
+def test_pdf_menu_becomes_one_page_each(dinner):
+    r = dinner.org.post(
+        f"/api/o/d/{dinner.id}/pages",
+        files=[("files", ("menu.pdf", pdf(3), "application/pdf"))],
+        data={"kind": "menu"},
+        headers=H,
+    )
+    assert r.status_code == 200 and len(r.json()["pages"]) == 3
+    pages = dinner.state()["menu"]["pages"]
+    assert len(pages) == 3 and all(p["image"].endswith(".jpg") for p in pages)
+
+
+def test_too_many_pdf_pages_is_a_clear_refusal(dinner):
+    r = dinner.org.post(
+        f"/api/o/d/{dinner.id}/pages", files=[("files", ("menu.pdf", pdf(13), "application/pdf"))], headers=H
+    )
+    assert r.status_code == 422 and "13 pages" in r.json()["detail"]
+    broken = dinner.org.post(
+        f"/api/o/d/{dinner.id}/pages", files=[("files", ("x.pdf", b"%PDF-1.4 junk", "application/pdf"))], headers=H
+    )
+    assert broken.status_code == 422
+
+
 def test_organiser_corrects_item_with_version_check(dinner):
     item = dinner.add_item("Pavlova", None)
     v = next(i for i in dinner.state()["menu"]["items"] if i["id"] == item)["version"]

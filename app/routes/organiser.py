@@ -13,7 +13,7 @@ from app.security import is_organiser, password_ok, rate_limit, require_organise
 from app.services import dinners, finalise, menu, payments, reconcile, up
 from app.services.billing import active_receipt, bill_for
 from app.services.events import ORGANISER_CHANNEL, audit, broker, touch
-from app.services.images import ImageRejected, store_image
+from app.services.images import ImageRejected, split_uploads, store_image
 from app.services.orders import Actor
 from app.services.qr import qr_svg
 from app.services.state import organiser_state, payment_profile
@@ -208,7 +208,7 @@ async def upload_pages(dinner_id: str, files: list[UploadFile] = File(...), kind
     with session_scope() as s:
         _dinner(s, dinner_id)
     try:
-        names = [store_image(dinner_id, b) for b in blobs]
+        names = [store_image(dinner_id, b) for b in split_uploads(blobs, 12)]
     except ImageRejected as e:
         raise HTTPException(422, str(e)) from e
     ids = []
@@ -440,7 +440,7 @@ def do_reopen(dinner_id: str, body: dict = Body(...)):
 async def upload_receipt(dinner_id: str, files: list[UploadFile] = File(...)):
     blobs = [await f.read() for f in files[:4]]
     try:
-        names = [store_image(dinner_id, b) for b in blobs]
+        names = [store_image(dinner_id, b) for b in split_uploads(blobs, 4)]
     except ImageRejected as e:
         raise HTTPException(422, str(e)) from e
     with locked_write() as s:

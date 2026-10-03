@@ -11,14 +11,17 @@ paid back by PayID — with Up Bank spotting the transfers for you.
 
 ## How a dinner goes
 
-1. **Arrive early → New dinner.** Photograph the menu pages (Menu tab). The QR
-   code is ready straight away — share it while the photos are still being read.
+1. **Arrive early → New dinner.** Photograph the menu pages (Menu tab), or choose
+   the restaurant's PDF menu if it's online — each PDF page is read like a photo.
+   The QR code is ready straight away — share it while the pages are still being read.
 2. **Review each page** as it's read: fix anything flagged (unclear text, a price
    that may belong to another line, a missing price), then **Publish to guests**.
    Guests see published pages immediately; unpublished pages show as "being read".
    Add specials or corrections by hand at any time.
-3. **Guests join** with a display name, browse (search, filters, text size,
-   light/dark), shortlist, and tap **Record my order**. Recording only logs what
+3. **Guests join** with a display name and browse a plain list of dishes and
+   prices — tap one for its description, options and dietary notes. Search, a
+   Filter button, a "Jump to" section bar and an "Aa" display button (text size,
+   light/dark) sit above it. Shortlist, and tap **Record my order**. Recording only logs what
    they ordered with staff; it doesn't send anything to the kitchen.
 4. **Shared dishes** are recorded once. Anyone else tapping the same dish is asked
    to *join* it, with a preview of how everyone's part changes. Several of the

@@ -56,14 +56,18 @@ function renderConn() {
     el.className = "conn pending";
     el.textContent = `Sending ${pending}…`;
   } else {
-    el.className = "conn";
-    el.textContent = "Live";
+    // Connected and up to date is the normal case: say nothing.
+    el.className = "conn hidden";
+    el.textContent = "";
   }
 }
 
 function render() {
   document.title = S.dinner.restaurant_name || "Dinner";
   $("#title").textContent = S.dinner.restaurant_name || "Dinner";
+  // The organiser looking at the diner view needs a way back.
+  const back = $("#orgback");
+  if (back) { back.hidden = !S.organiser; back.href = `/o/d/${S.dinner.id}`; }
   if (!S.me) { renderJoin(); return; }
   document.body.classList.remove("no-tabs");
   const views = { menu: renderMenu, mine: renderMine, table: renderTable, pay: renderPay };
@@ -141,6 +145,14 @@ function priceLabel(item) {
   return item.price_cents != null ? money(item.price_cents) : '<span class="muted">No price</span>';
 }
 
+// The one-glance price for the list: a single price, or "from" the cheapest size.
+function shortPrice(item) {
+  if (!item.variants.length) return item.price_cents != null ? money(item.price_cents) : "";
+  const p = priceRange(item);
+  if (!p.length) return "";
+  return item.variants.length > 1 ? `from ${money(Math.min(...p))}` : money(p[0]);
+}
+
 function passes(item) {
   const q = ui.q.trim().toLowerCase();
   if (q && !`${item.name} ${item.description}`.toLowerCase().includes(q)) return false;
@@ -191,19 +203,22 @@ function renderMenu() {
   const veganNote = ["vegan_marked", "vegan_request", "vegan_possible"].some((k) => ui.filters.has(k))
     ? `<div class="banner warn">“Vegan (menu)” is the restaurant's own label. “Possibly vegan” is our reading of the description only — confirm with staff. None of this is allergy advice.</div>` : "";
 
+  const active = FILTERS.filter(([k]) => ui.filters.has(k));
+  const nActive = active.length + (ui.maxPrice ? 1 : 0);
+
   app.innerHTML = `
     <div class="wrap">
       ${lockedBanner()}
       <div class="menu-tools">
-        <input id="q" type="search" placeholder="Search dishes and descriptions" value="${esc(ui.q)}" aria-label="Search the menu">
-        <div class="filters" role="group" aria-label="Filters">
-          ${FILTERS.map(([k, label]) => `<button class="chip" data-filter="${k}" aria-pressed="${ui.filters.has(k)}">${label}</button>`).join("")}
-          <select id="maxp" class="chip" aria-label="Maximum price" style="width:auto">
-            <option value="">Any price</option>
-            ${[10, 15, 20, 25, 30, 40].map((p) => `<option value="${p}" ${ui.maxPrice == p ? "selected" : ""}>Up to $${p}</option>`).join("")}
-          </select>
+        <div class="row" style="flex-wrap:nowrap">
+          <input id="q" class="grow" type="search" placeholder="Search the menu" value="${esc(ui.q)}" aria-label="Search the menu">
+          <button class="${nActive ? "primary" : ""}" data-filters>Filter${nActive ? ` · ${nActive}` : ""}</button>
         </div>
-        ${shown.length > 1 ? `<nav class="catnav" aria-label="Sections">${shown.map((g) => `<button class="chip" data-jump="${g.c.id}">${esc(g.c.name)}</button>`).join("")}</nav>` : ""}
+        ${nActive ? `<div class="filters" aria-label="Filters in use">
+          ${active.map(([k, label]) => `<button class="chip" data-filter="${k}" aria-pressed="true" aria-label="Remove filter ${label}">${label} ✕</button>`).join("")}
+          ${ui.maxPrice ? `<button class="chip" data-clearprice aria-pressed="true">Up to $${esc(ui.maxPrice)} ✕</button>` : ""}
+        </div>` : ""}
+        ${shown.length > 1 ? `<nav class="catnav" aria-label="Jump to a section"><span class="catnav-label">Jump to</span>${shown.map((g) => `<a href="#cat-${esc(g.c.id)}" data-jump="${esc(g.c.id)}">${esc(g.c.name)}</a>`).join("")}</nav>` : ""}
       </div>
       ${pending}${veganNote}${empty}${noMatch}
       ${shown.map((g) => `
@@ -214,6 +229,7 @@ function renderMenu() {
       ${m.legend.length ? `<p class="muted" style="margin-top:1rem">Menu key: ${uniqueLegend(m.legend).map((e) => `<b>${esc(e.symbol)}</b> ${esc(e.meaning)}`).join(" · ")}</p>` : ""}
       <section class="center"><button data-manual>+ Something not on the menu</button></section>
     </div>`;
+  watchSections();
 }
 
 function uniqueLegend(list) {
@@ -221,22 +237,25 @@ function uniqueLegend(list) {
   return list.filter((e) => !seen.has(e.symbol) && seen.add(e.symbol));
 }
 
+// Closed, a dish is just its name and price; tapping it opens everything else.
 function dishHtml(item) {
   const open = ui.open.has(item.id);
   const starred = S.shortlist.includes(item.id);
   const extras = [...item.extras, ...(catById(item.category_id)?.extras || [])];
+  const tags = [item.is_special ? '<span class="badge special">Special</span>' : "", item.unavailable ? '<span class="badge off">Unavailable</span>' : ""].join("");
   return `
-    <div class="dish ${item.unavailable ? "unavailable" : ""}">
+    <div class="dish ${item.unavailable ? "unavailable" : ""} ${open ? "open" : ""}">
       <button class="dish-head" data-toggle="${item.id}" aria-expanded="${open}">
-        <div class="grow"><div class="dish-name">${starred ? '<span aria-label="shortlisted">★</span> ' : ""}${esc(item.name)}</div>${badges(item)}</div>
-        <div class="dish-price num">${item.variants.length ? "" : priceLabel(item)}</div>
+        <span class="grow dish-name">${starred ? '<span aria-label="shortlisted">★</span> ' : ""}${esc(item.name)} ${tags}</span>
+        <span class="dish-price num">${shortPrice(item)}</span>
+        <span class="chev" aria-hidden="true">›</span>
       </button>
-      ${item.description && !open ? `<div class="dish-desc">${esc(item.description.length > 90 ? item.description.slice(0, 88) + "…" : item.description)}</div>` : ""}
-      ${item.variants.length && !open ? `<div class="muted">${priceLabel(item)}</div>` : ""}
       ${open ? `
         <div class="dish-body">
           ${item.description ? `<p class="dish-desc">${esc(item.description)}</p>` : ""}
+          ${badges(item)}
           ${item.variants.length ? `<ul class="opts">${item.variants.map((v) => `<li><span>${esc(v.label)}</span><span class="num">${v.price_cents != null ? money(v.price_cents) : "?"}</span></li>`).join("")}</ul>` : ""}
+          ${!item.variants.length && item.price_cents == null ? `<p class="muted">No price on the menu — ask staff.</p>` : ""}
           ${extras.length ? `<p class="muted">Extras:</p><ul class="opts">${extras.map((e) => `<li><span>+ ${esc(e.label)}</span><span class="num">${e.price_cents != null ? money(e.price_cents) : ""}</span></li>`).join("")}</ul>` : ""}
           ${item.vegan?.status === "possible" ? `<p class="banner warn">Possibly vegan: ${esc(item.vegan.note || "based on the description")}. This is not the restaurant's claim — check with staff.</p>` : ""}
           ${item.vegan?.status === "on_request" ? `<p class="banner good">The menu says: ${esc(item.vegan.note)}</p>` : ""}
@@ -248,6 +267,56 @@ function dishHtml(item) {
           </div>
         </div>` : ""}
     </div>`;
+}
+
+function filterSheet() {
+  const draw = () => `
+    <div class="row between"><h2>Filter the menu</h2><button class="small" data-close>Done</button></div>
+    <div class="filters wrapped">
+      ${FILTERS.map(([k, label]) => `<button type="button" class="chip" data-f="${k}" aria-pressed="${ui.filters.has(k)}">${label}</button>`).join("")}
+    </div>
+    <label for="maxp">Price</label>
+    <select id="maxp">
+      <option value="">Any price</option>
+      ${[10, 15, 20, 25, 30, 40].map((p) => `<option value="${p}" ${ui.maxPrice == p ? "selected" : ""}>Up to $${p}</option>`).join("")}
+    </select>
+    <p class="muted">“Vegan (menu)” is the restaurant's own label. “Possibly vegan” is our reading of the description — check with staff. None of this is allergy advice.</p>
+    <div class="row" style="margin-top:1rem">
+      <button type="button" class="grow" data-fclear>Clear</button>
+      <button type="button" class="primary grow" data-close>Show ${S.menu.items.filter(passes).length} dishes</button>
+    </div>`;
+  const s = sheet(draw());
+  const redraw = () => { s.el.innerHTML = draw(); renderMenu(); };
+  s.el.addEventListener("click", (e) => {
+    const f = e.target.closest("[data-f]");
+    if (f) { ui.filters.has(f.dataset.f) ? ui.filters.delete(f.dataset.f) : ui.filters.add(f.dataset.f); redraw(); }
+    if (e.target.closest("[data-fclear]")) { ui.filters.clear(); ui.maxPrice = ""; redraw(); }
+  });
+  s.el.addEventListener("change", (e) => { if (e.target.id === "maxp") { ui.maxPrice = e.target.value; redraw(); } });
+}
+
+// Underline the section you're reading in the "Jump to" bar.
+let spy;
+function watchSections() {
+  spy?.disconnect();
+  const links = $$(".catnav [data-jump]");
+  if (!links.length || !("IntersectionObserver" in window)) return;
+  spy = new IntersectionObserver((entries) => {
+    const hit = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (!hit) return;
+    const id = hit.target.id.slice(4);
+    links.forEach((a) => a.classList.toggle("on", a.dataset.jump === id));
+    // Keep the highlighted name in view, but leave "Jump to" showing when it fits.
+    const on = links.find((a) => a.dataset.jump === id);
+    const nav = on?.parentElement;
+    if (!nav) return;
+    const left = on.offsetLeft - nav.offsetLeft;
+    const label = nav.firstElementChild.offsetWidth + 16;
+    if (left + on.offsetWidth > nav.scrollLeft + nav.clientWidth || left - label < nav.scrollLeft) {
+      nav.scrollTo({ left: Math.max(0, left - label), behavior: "smooth" });
+    }
+  }, { rootMargin: "-30% 0px -60% 0px" });
+  $$(".cat-head").forEach((h) => spy.observe(h));
 }
 
 function showPhoto(pageId) {
@@ -607,13 +676,15 @@ const PAYID_LABEL = { phone: "mobile number", email: "email", abn: "ABN", org_id
 
 // ---------------------------------------------------------------- events
 document.addEventListener("click", async (e) => {
-  const t = e.target.closest("[data-tab],[data-gotab],[data-filter],[data-jump],[data-toggle],[data-star],[data-record],[data-photo],[data-manual],[data-join],[data-leave],[data-edit],[data-copy],[data-sent],[data-rename],[data-receipt]");
+  const t = e.target.closest("[data-tab],[data-gotab],[data-filters],[data-clearprice],[data-filter],[data-jump],[data-toggle],[data-star],[data-record],[data-photo],[data-manual],[data-join],[data-leave],[data-edit],[data-copy],[data-sent],[data-rename],[data-receipt]");
   if (!t || !S) return;
   const d = t.dataset;
   if (d.tab) setTab(d.tab);
   else if (d.gotab) { e.preventDefault(); setTab(d.gotab); }
   else if (d.filter) { ui.filters.has(d.filter) ? ui.filters.delete(d.filter) : ui.filters.add(d.filter); renderMenu(); }
-  else if (d.jump) $(`#cat-${CSS.escape(d.jump)}`)?.scrollIntoView({ behavior: "smooth" });
+  else if (d.filters !== undefined) filterSheet();
+  else if (d.clearprice !== undefined) { ui.maxPrice = ""; renderMenu(); }
+  else if (d.jump) { e.preventDefault(); $(`#cat-${CSS.escape(d.jump)}`)?.scrollIntoView({ behavior: "smooth" }); }
   else if (d.toggle) { ui.open.has(d.toggle) ? ui.open.delete(d.toggle) : ui.open.add(d.toggle); renderMenu(); }
   else if (d.star) {
     const on = !S.shortlist.includes(d.star);
@@ -658,9 +729,6 @@ document.addEventListener("input", (e) => {
     q.focus();
     q.setSelectionRange(pos, pos);
   }
-});
-document.addEventListener("change", (e) => {
-  if (e.target.id === "maxp") { ui.maxPrice = e.target.value; renderMenu(); }
 });
 
 prefsControls($("#prefs"));
