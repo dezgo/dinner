@@ -23,7 +23,7 @@ from app.services.extraction import (
     get_extractor,
     item_vegan_status,
 )
-from app.services.images import read_image
+from app.services.images import read_image, read_page_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,10 @@ def process_page(page_id: str) -> None:
             return
         dinner = s.get(Dinner, page.dinner_id)
         image = read_image(page.dinner_id, page.image_file)
+        pdf = read_page_pdf(page.dinner_id, page.image_file)
         demo = bool(dinner and dinner.is_demo)
     try:
-        result = get_extractor(demo=demo).menu(image, "image/jpeg")
+        result = get_extractor(demo=demo).menu(image, "image/jpeg", pdf=pdf)
     except ExtractionError as e:
         _fail(page_id, str(e))
         return

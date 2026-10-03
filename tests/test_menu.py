@@ -223,3 +223,28 @@ def test_guest_cannot_see_unpublished_photo(dinner):
     assert helen.get(f"{dinner.base}/image/{image}").status_code == 200
     stranger = new_client()
     assert stranger.get(f"{dinner.base}/image/{image}").status_code == 401
+
+
+def test_pdf_pages_are_read_as_pdf_and_photos_as_photos(dinner):
+    from app.services.extraction import CannedExtractor, set_extractor
+
+    seen = []
+
+    class Spy(CannedExtractor):
+        def menu(self, image, media_type, pdf=None):
+            seen.append(pdf)
+            return MENU_1
+
+    set_extractor(Spy())
+    try:
+        dinner.org.post(
+            f"/api/o/d/{dinner.id}/pages", files=[("files", ("menu.pdf", pdf(2), "application/pdf"))], headers=H
+        )
+        dinner.org.post(
+            f"/api/o/d/{dinner.id}/pages", files=[("files", ("p.png", png((9, 9, 9)), "image/png"))], headers=H
+        )
+    finally:
+        set_extractor(None)
+    assert len(seen) == 3
+    assert all(p is not None and p.startswith(b"%PDF") for p in seen[:2])
+    assert seen[2] is None

@@ -6,8 +6,10 @@ re-encoded as JPEG — which also drops all metadata, including GPS location.
 Files are stored under a per-dinner folder with random names and are only
 ever served through a route that checks the dinner.
 
-A PDF (say a menu downloaded from the restaurant's website) is turned into one
-image per page first, so from then on it's handled exactly like photos.
+A PDF (say a menu downloaded from the restaurant's website) is split into its
+pages. Each page gets an image like a photo (what guests see), and keeps its
+own one-page PDF beside it, so the reader gets the page's real text rather
+than having to read it off a picture.
 """
 
 from __future__ import annotations
@@ -34,14 +36,14 @@ def is_pdf(data: bytes) -> bool:
     return data[:1024].lstrip().startswith(b"%PDF")
 
 
-def split_uploads(blobs: list[bytes], max_pages: int) -> list[bytes]:
-    """Each upload as page images: a photo stays one, a PDF becomes one per page."""
+def split_uploads(blobs: list[bytes], max_pages: int) -> list[tuple[bytes, bytes | None]]:
+    """Each upload as pages of (image, one-page PDF or None): a photo is one page."""
     limit = get_settings().max_upload_mb * 1024 * 1024
-    pages: list[bytes] = []
+    pages: list[tuple[bytes, bytes | None]] = []
     for data in blobs:
         if len(data) > limit:
             raise ImageRejected(f"That file is over {get_settings().max_upload_mb} MB.")
-        pages.extend(pdf_pages(data) if is_pdf(data) else [data])
+        pages.extend(pdf_pages(data) if is_pdf(data) else [(data, None)])
     if len(pages) > max_pages:
         raise ImageRejected(
             f"That's {len(pages)} pages; the most at once is {max_pages}. Send the first few, then the rest."
@@ -49,13 +51,13 @@ def split_uploads(blobs: list[bytes], max_pages: int) -> list[bytes]:
     return pages
 
 
-def pdf_pages(data: bytes) -> list[bytes]:
-    """Render every page of a PDF to PNG, about MAX_EDGE pixels on its long side."""
+def pdf_pages(data: bytes) -> list[tuple[bytes, bytes]]:
+    """Each page of a PDF as (PNG about MAX_EDGE pixels on its long side, one-page PDF)."""
     try:
         pdf = pdfium.PdfDocument(data)
     except pdfium.PdfiumError as e:
         raise ImageRejected("That PDF couldn't be opened (it may be damaged or password protected).") from e
-    out: list[bytes] = []
+    out: list[tuple[bytes, bytes]] = []
     try:
         for i in range(len(pdf)):
             page = pdf[i]
@@ -64,7 +66,12 @@ def pdf_pages(data: bytes) -> list[bytes]:
             img = page.render(scale=scale).to_pil()
             buf = io.BytesIO()
             img.save(buf, "PNG")
-            out.append(buf.getvalue())
+            single = pdfium.PdfDocument.new()
+            single.import_pages(pdf, [i])
+            pdf_buf = io.BytesIO()
+            single.save(pdf_buf)
+            single.close()
+            out.append((buf.getvalue(), pdf_buf.getvalue()))
     finally:
         pdf.close()
     if not out:
@@ -85,6 +92,22 @@ def store_image(dinner_id: str, data: bytes) -> str:
     name = f"{new_id()}.jpg"
     (dinner_dir(dinner_id) / name).write_bytes(normalise(data))
     return name
+
+
+def store_page(dinner_id: str, page: tuple[bytes, bytes | None]) -> str:
+    """Store one page from split_uploads; its PDF (if any) sits beside the image."""
+    image, pdf = page
+    name = store_image(dinner_id, image)
+    if pdf is not None:
+        (dinner_dir(dinner_id) / name.replace(".jpg", ".pdf")).write_bytes(pdf)
+    return name
+
+
+def read_page_pdf(dinner_id: str, image_name: str) -> bytes | None:
+    """The one-page PDF a page image came from, if it came from a PDF."""
+    path = image_path(dinner_id, image_name)
+    pdf = path.with_suffix(".pdf") if path else None
+    return pdf.read_bytes() if pdf and pdf.is_file() else None
 
 
 def normalise(data: bytes) -> bytes:

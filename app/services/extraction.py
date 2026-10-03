@@ -152,7 +152,7 @@ Rules:
 
 
 class Extractor(Protocol):
-    def menu(self, image: bytes, media_type: str) -> MenuExtraction: ...
+    def menu(self, image: bytes, media_type: str, pdf: bytes | None = None) -> MenuExtraction: ...
 
     def receipt(self, images: list[tuple[bytes, str]]) -> ReceiptExtraction: ...
 
@@ -167,6 +167,17 @@ def _image_block(data: bytes, media_type: str) -> dict:
         "source": {
             "type": "base64",
             "media_type": media_type,
+            "data": base64.standard_b64encode(data).decode(),
+        },
+    }
+
+
+def _pdf_block(data: bytes) -> dict:
+    return {
+        "type": "document",
+        "source": {
+            "type": "base64",
+            "media_type": "application/pdf",
             "data": base64.standard_b64encode(data).decode(),
         },
     }
@@ -215,7 +226,8 @@ class ClaudeExtractor:
         if parsed is None:
             raise ExtractionError("The photo-reading result was incomplete.")
         logger.info(
-            "extraction ok model=%s in=%s out=%s req=%s",
+            "extraction ok source=%s model=%s in=%s out=%s req=%s",
+            content[0]["type"],
             message.model,
             message.usage.input_tokens,
             message.usage.output_tokens,
@@ -223,9 +235,18 @@ class ClaudeExtractor:
         )
         return parsed
 
-    def menu(self, image: bytes, media_type: str) -> MenuExtraction:
+    def menu(self, image: bytes, media_type: str, pdf: bytes | None = None) -> MenuExtraction:
+        # From a PDF, send the page itself: Claude gets its real text as well as
+        # how it looks, so labels and prices aren't read off pixels.
+        if pdf is not None:
+            content = [
+                _pdf_block(pdf),
+                {"type": "text", "text": "Transcribe this menu page (one page of the restaurant's PDF menu)."},
+            ]
+        else:
+            content = [_image_block(image, media_type), {"type": "text", "text": "Transcribe this menu page."}]
         return self._run(
-            [_image_block(image, media_type), {"type": "text", "text": "Transcribe this menu page."}],
+            content,
             MenuExtraction,
             MENU_INSTRUCTIONS,
         )
@@ -253,11 +274,11 @@ class CannedExtractor:
     def __init__(self, fallback: Extractor | None = None):
         self.fallback = fallback
 
-    def menu(self, image: bytes, media_type: str) -> MenuExtraction:
+    def menu(self, image: bytes, media_type: str, pdf: bytes | None = None) -> MenuExtraction:
         key = hashlib.sha256(image).hexdigest()
         if key not in self.menus:
             if self.fallback is not None:
-                return self.fallback.menu(image, media_type)
+                return self.fallback.menu(image, media_type, pdf=pdf)
             raise ExtractionError("Photo reading isn't configured (no Anthropic API key). Enter items manually.")
         return self.menus[key]
 
