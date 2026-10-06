@@ -267,3 +267,15 @@ def test_clearing_a_dinner_hides_it_and_closes_the_guest_link_until_brought_back
     assert dinner.id in [d["id"] for d in listed["dinners"]]
     assert listed["archived_count"] == 0
     assert guest.get(f"{dinner.base}/state").status_code == 200
+
+
+def test_table_number_is_kept_tidy_and_shown_to_guests(organiser):
+    from tests.conftest import Dinner as D
+
+    r = organiser.post("/api/o/dinners", json={"restaurant_name": "Bistro", "table_label": " Table  12 "}, headers=H)
+    d = D(organiser, r.json()["id"])
+    assert d.state()["dinner"]["table_label"] == "12"
+    organiser.patch(f"/api/o/d/{d.id}", json={"table_label": "Courtyard 3"}, headers=H)
+    assert d.gstate(d.guest("Pat"))["dinner"]["table_label"] == "Courtyard 3"
+    listed = organiser.get("/api/o/dinners").json()["dinners"]
+    assert listed[0]["table_label"] == "Courtyard 3"

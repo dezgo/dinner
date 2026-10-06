@@ -62,6 +62,7 @@ class Dinner(SQLModel, table=True):
     public_token: str = Field(default_factory=new_token, index=True, unique=True)
     restaurant_name: str = ""
     restaurant_id: str | None = Field(default=None, index=True)
+    table_label: str = ""  # the restaurant's table number or name, e.g. "12" or "Courtyard 3"
     is_demo: bool = False
     status: str = "open"  # open | finalised
     revision: int = 0  # bumped on every change; clients re-fetch when it moves

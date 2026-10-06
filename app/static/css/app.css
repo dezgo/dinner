@@ -238,6 +238,7 @@ details > summary { cursor: pointer; padding: .4rem 0; color: var(--accent); }
 .staff-name { font-size: 1.6rem; font-weight: 700; line-height: 1.25; }
 .staff-name span { font-weight: 500; }
 .staff-sub { font-size: 1.2rem; margin-top: .2rem; }
+.staff-table { font-size: 1.6rem; font-weight: 800; }
 .staff-who { font-size: .95rem; color: var(--ink-2); margin-top: .3rem; }
 
 /* ---------- showcase: the menu as the restaurant sees it ---------- */

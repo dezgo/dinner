@@ -41,6 +41,7 @@ def _dinner(d: Dinner) -> dict:
         "id": d.id,
         "code": d.code,
         "restaurant_name": d.restaurant_name,
+        "table_label": d.table_label,
         "status": d.status,
         "revision": d.revision,
         "version": d.version,

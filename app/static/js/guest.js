@@ -64,7 +64,7 @@ function renderConn() {
 
 function render() {
   document.title = S.dinner.restaurant_name || "Dinner";
-  $("#title").textContent = S.dinner.restaurant_name || "Dinner";
+  $("#title").textContent = `${S.dinner.restaurant_name || "Dinner"}${S.dinner.table_label ? ` · Table ${S.dinner.table_label}` : ""}`;
   // The organiser looking at the diner view needs a way back.
   const back = $("#orgback");
   if (back) { back.hidden = !S.organiser; back.href = `/o/d/${S.dinner.id}`; }
@@ -629,7 +629,7 @@ function staffView(which) {
   el.className = "staff-view";
   el.setAttribute("role", "dialog");
   el.innerHTML = `
-    <div class="row between"><div class="muted">${mine ? esc(S.me.name) : "Whole table"}</div><button data-close>Done</button></div>
+    <div class="row between"><div>${S.dinner.table_label ? `<div class="staff-table">Table ${esc(S.dinner.table_label)}</div>` : ""}<div class="muted">${mine ? esc(S.me.name) : "Whole table"}</div></div><button data-close>Done</button></div>
     ${lines.map(row).join("") || '<p class="muted">Nothing added yet.</p>'}`;
   const close = () => { el.remove(); wake?.release?.().catch(() => {}); wake = null; };
   el.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) close(); });

@@ -34,12 +34,13 @@ async function home() {
         <div><label for="rn">Restaurant</label><input id="rn" maxlength="80" placeholder="e.g. Lantern Kitchen" list="rlist" autocomplete="off">
           <datalist id="rlist">${known.restaurants.map((r) => `<option value="${esc(r.name)}">`).join("")}</datalist></div>
         <div id="rsaved"></div>
+        <div><label for="tn">Table (optional)</label><input id="tn" maxlength="20" placeholder="e.g. 12" style="max-width:10rem"></div>
         <button class="primary block">Start dinner</button>
       </form>
       <section>
         ${data.dinners.map((d) => `
           <a class="card row between" href="/o/d/${d.id}" style="display:flex;text-decoration:none;color:inherit;margin-top:.75rem">
-            <div class="grow"><b>${esc(d.restaurant_name || "Dinner")}</b> <span class="muted">${esc(d.code)}</span>
+            <div class="grow"><b>${esc(d.restaurant_name || "Dinner")}</b>${d.table_label ? ` · Table ${esc(d.table_label)}` : ""} <span class="muted">${esc(d.code)}</span>
               <div class="muted">${when(d.created_at)} · ${d.people} people${d.is_demo ? " · demo" : ""}</div></div>
             <span class="state ${d.status === "finalised" ? (d.waiting_on ? "warn" : "good") : "info"}">${d.status === "finalised" ? (d.waiting_on ? `Waiting on ${d.waiting_on}` : "All paid") : "Open"}</span>
           </a>`).join("") || '<p class="muted">No dinners yet.</p>'}
@@ -61,7 +62,7 @@ async function home() {
   $("#new").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const r = await call("POST", "/api/o/dinners", { restaurant_name: $("#rn").value, use_saved_menu: $("#usesaved")?.checked ?? true });
+      const r = await call("POST", "/api/o/dinners", { restaurant_name: $("#rn").value, table_label: $("#tn").value, use_saved_menu: $("#usesaved")?.checked ?? true });
       location.href = `/o/d/${r.id}`;
     } catch (err) { fail(err); }
   });
@@ -187,7 +188,7 @@ async function refresh() {
 
 function renderDinner() {
   document.title = `${S.dinner.restaurant_name || "Dinner"} — organiser`;
-  $("#title").textContent = S.dinner.restaurant_name || "Dinner";
+  $("#title").textContent = `${S.dinner.restaurant_name || "Dinner"}${S.dinner.table_label ? ` · Table ${S.dinner.table_label}` : ""}`;
   const needsReview = S.bank_review.filter((t) => t.match_state === "review").length;
   const tabs = [
     ["share", "Share"], ["menu", `Menu${S.menu.pages.some((p) => p.status === "review") ? " •" : ""}`], ["bill", "Bill"],
@@ -218,8 +219,9 @@ function paneShare() {
       <button class="small" data-copy="${esc(S.share_url)}">Copy link</button>
     </section>
     <section class="card stack">
-      <div class="row between"><h2 style="margin:0">Name</h2></div>
-      <form id="rename" data-keep class="row"><input id="rest" class="grow" value="${esc(S.dinner.restaurant_name)}" placeholder="Restaurant"><button>Save</button></form>
+      <h2 style="margin:0">Restaurant and table</h2>
+      <form id="rename" data-keep class="row"><input id="rest" class="grow" value="${esc(S.dinner.restaurant_name)}" placeholder="Restaurant" aria-label="Restaurant">
+        <input id="tbl" value="${esc(S.dinner.table_label)}" placeholder="Table" aria-label="Table" maxlength="20" style="width:6.5rem"><button>Save</button></form>
     </section>
     <section class="card">
       <h2>People (${S.participants.length})</h2>
@@ -235,7 +237,7 @@ function paneShare() {
       <p class="muted">Clear it off your list to start fresh. Nothing is deleted — you can bring it back from “Cleared dinners” on the dinner list.</p>
       <button class="danger block" data-cleardinner>Clear this dinner</button>
     </section>`;
-  $("#rename").addEventListener("submit", async (e) => { e.preventDefault(); try { await call("PATCH", oBase, { restaurant_name: $("#rest").value }); toast("Saved"); } catch (err) { fail(err); } });
+  $("#rename").addEventListener("submit", async (e) => { e.preventDefault(); try { await call("PATCH", oBase, { restaurant_name: $("#rest").value, table_label: $("#tbl").value }); toast("Saved"); document.activeElement?.blur(); refresh(); } catch (err) { fail(err); } });
   $("#addp").addEventListener("submit", async (e) => { e.preventDefault(); try { await call("POST", `${oBase}/people`, { name: $("#pname").value }); $("#pname").value = ""; refresh(); } catch (err) { fail(err); } });
 }
 

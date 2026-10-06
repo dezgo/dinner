@@ -104,6 +104,7 @@ def list_dinners(archived: bool = False, s: Session = Depends(get_session)):
                 "id": d.id,
                 "code": d.code,
                 "restaurant_name": d.restaurant_name,
+                "table_label": d.table_label,
                 "status": d.status,
                 "is_demo": d.is_demo,
                 "created_at": d.created_at.isoformat(),
@@ -126,7 +127,10 @@ def create_dinner(body: dict = Body(...)):
     with locked_write() as s:
         profile = payment_profile(s)
         d = dinners.create_dinner(
-            s, body.get("restaurant_name", ""), body.get("my_name") or profile.get("my_name") or "Organiser"
+            s,
+            body.get("restaurant_name", ""),
+            body.get("my_name") or profile.get("my_name") or "Organiser",
+            table_label=body.get("table_label", ""),
         )
         restaurants.link(s, d)
         dishes = restaurants.load_menu(s, d) if body.get("use_saved_menu", True) else 0
@@ -193,6 +197,8 @@ def edit_dinner(dinner_id: str, body: dict = Body(...)):
         if "restaurant_name" in body:
             d.restaurant_name = " ".join(str(body["restaurant_name"]).split())[:80]
             restaurants.link(s, d)
+        if "table_label" in body:
+            d.table_label = dinners.clean_table(body["table_label"])
         if "archived" in body and bool(body["archived"]) != d.archived:
             d.archived = bool(body["archived"])
             audit(

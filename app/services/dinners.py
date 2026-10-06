@@ -24,10 +24,19 @@ def clean_name(raw: str) -> str:
     return name
 
 
-def create_dinner(s: Session, restaurant_name: str, organiser_name: str, *, is_demo: bool = False) -> Dinner:
+def clean_table(raw) -> str:
+    """A table number or name as the restaurant calls it: "12", "Courtyard 3"."""
+    text = " ".join(str(raw or "").split())[:20]
+    return text[6:].strip() if text.lower().startswith("table ") else text
+
+
+def create_dinner(
+    s: Session, restaurant_name: str, organiser_name: str, *, is_demo: bool = False, table_label: str = ""
+) -> Dinner:
     dinner = Dinner(
         code=next_dinner_code(s),
         restaurant_name=" ".join(str(restaurant_name or "").split())[:80],
+        table_label=clean_table(table_label),
         is_demo=is_demo,
     )
     s.add(dinner)

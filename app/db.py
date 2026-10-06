@@ -22,7 +22,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from app import models  # noqa: F401  (registers tables)
 from app.config import get_settings
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 write_lock = threading.RLock()
 _engine: Engine | None = None
@@ -77,6 +77,11 @@ def init_db() -> None:
                 have = {r[1] for r in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
                 if column not in have:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+        if 0 < current < 3:
+            # 3: which table the dinner is at.
+            have = {r[1] for r in conn.exec_driver_sql("PRAGMA table_info(dinner)")}
+            if "table_label" not in have:
+                conn.exec_driver_sql("ALTER TABLE dinner ADD COLUMN table_label VARCHAR NOT NULL DEFAULT ''")
         if current < SCHEMA_VERSION:
             conn.exec_driver_sql(f"PRAGMA user_version={SCHEMA_VERSION}")
 
