@@ -87,15 +87,27 @@ def summary(s: Session, dinner: Dinner) -> dict | None:
 
 
 def listing(s: Session) -> list[dict]:
-    rows = s.exec(select(Restaurant).order_by(col(Restaurant.name))).all()
-    return [
+    """Places you've eaten, most recently visited first, for one-tap starts."""
+    visits: dict[str, list] = {}
+    for rid, at in s.exec(
+        select(Dinner.restaurant_id, Dinner.created_at).where(Dinner.restaurant_id != None)  # noqa: E711
+    ).all():
+        visits.setdefault(rid, []).append(at)
+    rows = s.exec(select(Restaurant)).all()
+    out = [
         {
+            "id": r.id,
             "name": r.name,
             "menu_updated_at": r.menu_updated_at.isoformat() if r.menu_updated_at else None,
             "dishes": len(r.menu.get("items", [])) if r.menu else 0,
+            "visits": len(visits.get(r.id, [])),
+            "last_visit": max(visits[r.id]).isoformat() if visits.get(r.id) else None,
         }
         for r in rows
     ]
+    out.sort(key=lambda x: x["name"].lower())
+    out.sort(key=lambda x: x["last_visit"] or "", reverse=True)
+    return out
 
 
 # ------------------------------------------------------------------- saving

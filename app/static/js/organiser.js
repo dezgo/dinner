@@ -29,10 +29,14 @@ async function home() {
       <div class="row between" style="margin:1rem 0"><h1 style="margin:0">Dinners</h1><a href="/o/settings" class="btn">Settings</a></div>
       ${!data.profile_ready ? `<div class="banner warn">Add your PayID in <a href="/o/settings">Settings</a> before finalising a real bill.</div>` : ""}
       ${data.review_count ? `<div class="banner warn">${data.review_count} incoming transfer${data.review_count > 1 ? "s need" : " needs"} your review — open the dinner's Payments tab.</div>` : ""}
+      ${known.restaurants.length ? `<section class="card stack">
+        <h2>Where are you eating?</h2>
+        <div class="stack" id="places">${known.restaurants.map((r, n) => placeButton(r, n >= 6)).join("")}</div>
+        ${known.restaurants.length > 6 ? `<button class="small" id="moreplaces">All ${known.restaurants.length} restaurants</button>` : ""}
+      </section>` : ""}
       <form id="new" class="card stack">
-        <h2>New dinner</h2>
-        <div><label for="rn">Restaurant</label><input id="rn" maxlength="80" placeholder="e.g. Lantern Kitchen" list="rlist" autocomplete="off">
-          <datalist id="rlist">${known.restaurants.map((r) => `<option value="${esc(r.name)}">`).join("")}</datalist></div>
+        <h2>${known.restaurants.length ? "Somewhere new" : "New dinner"}</h2>
+        <div><label for="rn">Restaurant</label><input id="rn" maxlength="80" placeholder="e.g. Lantern Kitchen" autocomplete="off"></div>
         <div id="rsaved"></div>
         <div><label for="tn">Table (optional)</label><input id="tn" maxlength="20" placeholder="e.g. 12" style="max-width:10rem"></div>
         <button class="primary block">Start dinner</button>
@@ -53,19 +57,24 @@ async function home() {
       </section>
       <p class="center"><button class="small" id="out">Sign out</button></p>
     </div>`;
-  // Been here before? Offer the menu saved last time.
+  // Typed the name of somewhere you've been? Offer to go there instead.
   $("#rn").addEventListener("input", () => {
     const r = known.restaurants.find((x) => nameKey(x.name) === nameKey($("#rn").value));
-    $("#rsaved").innerHTML = r?.dishes ? `<label class="check"><input type="checkbox" id="usesaved" checked>
-      Start with the menu saved ${dayOf(r.menu_updated_at)} (${r.dishes} dishes) — guests can see it straight away</label>` : "";
+    $("#rsaved").innerHTML = r ? `<div class="banner info">You've been to ${esc(r.name)} before.
+      <div class="row" style="margin-top:.5rem"><button type="button" class="small primary" data-place="${r.id}">Start there</button></div></div>` : "";
   });
   $("#new").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const r = await call("POST", "/api/o/dinners", { restaurant_name: $("#rn").value, table_label: $("#tn").value, use_saved_menu: $("#usesaved")?.checked ?? true });
+      const r = await call("POST", "/api/o/dinners", { restaurant_name: $("#rn").value, table_label: $("#tn").value });
       location.href = `/o/d/${r.id}`;
     } catch (err) { fail(err); }
   });
+  app.addEventListener("click", (e) => {
+    const id = e.target.closest("[data-place]")?.dataset.place;
+    if (id) startAtSheet(known.restaurants.find((r) => r.id === id));
+  });
+  $("#moreplaces")?.addEventListener("click", (e) => { $$("#places [hidden]").forEach((b) => { b.hidden = false; }); e.target.remove(); });
   $("#demo").addEventListener("click", async (e) => {
     e.target.disabled = true;
     try { const r = await call("POST", "/api/o/demo"); location.href = `/o/d/${r.id}`; } catch (err) { fail(err); e.target.disabled = false; }
@@ -74,6 +83,57 @@ async function home() {
   $("#showcleared")?.addEventListener("click", async (e) => {
     e.target.remove();
     try { showCleared((await call("GET", "/api/o/dinners?archived=true")).dinners); } catch (err) { fail(err); }
+  });
+}
+
+// How long ago, in words a person would use: "today", "3 weeks ago".
+function ago(iso) {
+  const days = Math.floor((Date.now() - new Date(iso)) / 864e5);
+  if (days < 1) return "today";
+  if (days < 2) return "yesterday";
+  if (days < 14) return `${days} days ago`;
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 365) return `${Math.floor(days / 30)} months ago`;
+  return days < 730 ? "over a year ago" : `${Math.floor(days / 365)} years ago`;
+}
+// Menus change; after this long, suggest photographing it again.
+const STALE_DAYS = 90;
+const stale = (r) => r.menu_updated_at && Date.now() - new Date(r.menu_updated_at) > STALE_DAYS * 864e5;
+
+function placeButton(r, hidden) {
+  const menuNote = r.dishes
+    ? `<span class="state ${stale(r) ? "warn" : "good"}">Menu from ${ago(r.menu_updated_at)}</span>`
+    : '<span class="state">No saved menu</span>';
+  return `<button type="button" class="place" data-place="${r.id}"${hidden ? " hidden" : ""}>
+    <span class="grow"><b>${esc(r.name)}</b>
+      <span class="muted">${r.visits} visit${r.visits === 1 ? "" : "s"}${r.last_visit ? ` · last ${ago(r.last_visit)}` : ""}${r.dishes ? ` · ${r.dishes} dish${r.dishes === 1 ? "" : "es"}` : ""}</span></span>
+    ${menuNote}</button>`;
+}
+
+// Start a dinner at a place you've been: straight in with the saved menu, or
+// the saved menu plus a fresh scan (changes are then noted dish by dish).
+function startAtSheet(r) {
+  const old = stale(r);
+  const s = sheet(`<h2>${esc(r.name)}</h2>
+    ${!r.dishes ? `<p class="muted">No menu saved yet, so you'll photograph it once you're there.</p>`
+      : old ? `<div class="banner warn">The saved menu is from ${dayOf(r.menu_updated_at)} (${ago(r.menu_updated_at)}). Prices may have moved, so it's worth photographing it again.</div>`
+      : `<p class="muted">Menu saved ${dayOf(r.menu_updated_at)}, ${r.dishes} dishes. Guests can see it as soon as they scan in.</p>`}
+    <form id="startat" class="stack">
+      <div><label for="stn">Table (optional)</label><input id="stn" maxlength="20" placeholder="e.g. 12" style="max-width:10rem"></div>
+      ${!r.dishes ? `<button class="primary block" data-mode="scan">Start dinner</button>`
+        : old ? `<button class="primary block" data-mode="scan">Use it and scan the menu again</button><button class="block" data-mode="saved">Just use the saved menu</button>`
+        : `<button class="primary block" data-mode="saved">Start with the saved menu</button><button class="block" data-mode="scan">Use it and scan the menu again</button>`}
+      ${r.dishes ? `<p class="muted">Scanning again keeps guests on the saved menu meanwhile, updates dishes in place and notes what changed.</p>` : ""}
+    </form>`);
+  $("#startat", s.el).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const mode = e.submitter?.dataset.mode || "saved";
+    try {
+      const d = await call("POST", "/api/o/dinners", { restaurant_id: r.id, table_label: $("#stn", s.el).value });
+      // Land on the Menu tab, ready to photograph.
+      if (mode === "scan") { try { sessionStorage.setItem(`dt_otab_${d.id}`, "menu"); } catch { /* fine */ } }
+      location.href = `/o/d/${d.id}`;
+    } catch (err) { fail(err); }
   });
 }
 

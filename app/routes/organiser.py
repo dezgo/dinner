@@ -8,7 +8,7 @@ from sqlmodel import Session, col, func, select
 
 from app.config import get_settings
 from app.db import get_session, locked_write, session_scope
-from app.models import Dinner, MenuCategory, MenuItem, MenuPage, Participant, Receipt, utcnow
+from app.models import Dinner, MenuCategory, MenuItem, MenuPage, Participant, Receipt, Restaurant, utcnow
 from app.security import is_organiser, password_ok, rate_limit, require_organiser, sign_in, sign_out
 from app.services import dinners, finalise, menu, payments, reconcile, restaurants, up
 from app.services.billing import active_receipt, bill_for
@@ -126,9 +126,13 @@ def list_dinners(archived: bool = False, s: Session = Depends(get_session)):
 def create_dinner(body: dict = Body(...)):
     with locked_write() as s:
         profile = payment_profile(s)
+        # Picked from your restaurants, or typed in.
+        known = s.get(Restaurant, body["restaurant_id"]) if body.get("restaurant_id") else None
+        if body.get("restaurant_id") and known is None:
+            raise HTTPException(404, "That restaurant isn't saved any more.")
         d = dinners.create_dinner(
             s,
-            body.get("restaurant_name", ""),
+            known.name if known else body.get("restaurant_name", ""),
             body.get("my_name") or profile.get("my_name") or "Organiser",
             table_label=body.get("table_label", ""),
         )

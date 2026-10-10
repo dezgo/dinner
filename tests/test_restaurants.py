@@ -117,3 +117,25 @@ def test_a_full_rescan_leaves_no_old_pages_behind(dinner, organiser):
     pages = again.state()["menu"]["pages"]
     assert len(pages) == 1 and not pages[0]["from_saved"]
     assert [i["name"] for i in again.state()["menu"]["items"]] == ["Steak"]
+
+
+def test_restaurants_list_most_recent_first_with_visits(dinner, organiser):
+    scan_and_publish(dinner, (1, 2, 3), menu(_item(name="Steak", price_cents=4000)))
+    new_dinner(organiser, "Lantern Kitchen")
+    new_dinner(organiser, "test bistro")
+    listed = organiser.get("/api/o/restaurants").json()["restaurants"]
+    assert [(r["name"], r["visits"]) for r in listed] == [("Test Bistro", 2), ("Lantern Kitchen", 1)]
+    assert listed[0]["dishes"] == 1 and listed[0]["last_visit"] and listed[0]["menu_updated_at"]
+    assert listed[1]["dishes"] == 0 and listed[1]["menu_updated_at"] is None
+
+
+def test_start_a_dinner_by_picking_a_restaurant(dinner, organiser):
+    scan_and_publish(dinner, (1, 2, 3), menu(_item(name="Steak", price_cents=4000)))
+    rid = organiser.get("/api/o/restaurants").json()["restaurants"][0]["id"]
+    r = organiser.post("/api/o/dinners", json={"restaurant_id": rid, "table_label": "7"}, headers=H)
+    picked = Dinner(organiser, r.json()["id"])
+    st = picked.state()
+    assert st["dinner"]["restaurant_name"] == "Test Bistro" and st["dinner"]["table_label"] == "7"
+    assert set(names(picked)) == {"Steak"}
+    gone = organiser.post("/api/o/dinners", json={"restaurant_id": "nope"}, headers=H)
+    assert gone.status_code == 404
