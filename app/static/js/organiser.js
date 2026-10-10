@@ -50,11 +50,11 @@ async function home() {
           </a>`).join("") || '<p class="muted">No dinners yet.</p>'}
       </section>
       ${data.archived_count ? `<p class="center"><button class="small" id="showcleared">Cleared dinners (${data.archived_count})</button></p><section id="cleared"></section>` : ""}
-      <section class="card stack">
+      ${data.dinners.some((d) => !d.is_demo) ? "" : `<section class="card stack">
         <h2>Try it first</h2>
         <p class="muted">A demo dinner with a sample menu, guests, orders and receipt. Payments are simulated — nothing touches your bank.</p>
         <button id="demo" class="block">Create demo dinner</button>
-      </section>
+      </section>`}
       <p class="center"><button class="small" id="out">Sign out</button></p>
     </div>`;
   // Typed the name of somewhere you've been? Offer to go there instead.
@@ -75,7 +75,7 @@ async function home() {
     if (id) startAtSheet(known.restaurants.find((r) => r.id === id));
   });
   $("#moreplaces")?.addEventListener("click", (e) => { $$("#places [hidden]").forEach((b) => { b.hidden = false; }); e.target.remove(); });
-  $("#demo").addEventListener("click", async (e) => {
+  $("#demo")?.addEventListener("click", async (e) => {
     e.target.disabled = true;
     try { const r = await call("POST", "/api/o/demo"); location.href = `/o/d/${r.id}`; } catch (err) { fail(err); e.target.disabled = false; }
   });
