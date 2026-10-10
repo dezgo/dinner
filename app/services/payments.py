@@ -117,7 +117,6 @@ def open_windows(s: Session, at: datetime, simulated: bool) -> list[Dinner]:
     dinners = s.exec(
         select(Dinner).where(
             Dinner.instructions_issued_at != None,  # noqa: E711
-            Dinner.archived == False,  # noqa: E712
             Dinner.is_demo == simulated,
         )
     ).all()

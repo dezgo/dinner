@@ -142,7 +142,7 @@ def issue_guest_session(response: Response, dinner: Dinner, participant: Partici
 
 def dinner_by_token(session: Session, public_token: str) -> Dinner:
     dinner = session.exec(select(Dinner).where(Dinner.public_token == public_token)).first()
-    if dinner is None or dinner.archived:
+    if dinner is None:
         raise HTTPException(404, "This dinner link isn't valid.")
     return dinner
 

@@ -46,7 +46,6 @@ async function home() {
       </form>
       ${earlier.length ? `<p class="center"><button class="small" id="showearlier">Earlier dinners (${earlier.length})</button></p>
         <section id="earlier" hidden><h2>Earlier dinners</h2>${earlier.map(dinnerCard).join("")}</section>` : ""}
-      ${data.archived_count ? `<p class="center"><button class="small" id="showcleared">Cleared dinners (${data.archived_count})</button></p><section id="cleared"></section>` : ""}
       ${data.dinners.some((d) => !d.is_demo) ? "" : `<section class="card stack">
         <h2>Try it first</h2>
         <p class="muted">A demo dinner with a sample menu, guests, orders and receipt. Payments are simulated — nothing touches your bank.</p>
@@ -78,10 +77,6 @@ async function home() {
   });
   $("#out").addEventListener("click", async () => { await api("POST", "/api/logout"); location.href = "/o/login"; });
   $("#showearlier")?.addEventListener("click", (e) => { $("#earlier").hidden = false; e.target.remove(); });
-  $("#showcleared")?.addEventListener("click", async (e) => {
-    e.target.remove();
-    try { showCleared((await call("GET", "/api/o/dinners?archived=true")).dinners); } catch (err) { fail(err); }
-  });
 }
 
 // A meal is over a few hours after it starts. Older dinners fold away on
@@ -147,20 +142,6 @@ function startAtSheet(r) {
       if (mode === "scan") { try { sessionStorage.setItem(`dt_otab_${d.id}`, "menu"); } catch { /* fine */ } }
       location.href = `/o/d/${d.id}`;
     } catch (err) { fail(err); }
-  });
-}
-
-function showCleared(list) {
-  const box = $("#cleared");
-  box.innerHTML = `<h2>Cleared dinners</h2><p class="muted">Hidden from your list and closed to guests. Bring one back to use it again.</p>
-    ${list.map((d) => `<div class="card row between" style="margin-top:.5rem">
-      <div class="grow"><b>${esc(d.restaurant_name || "Dinner")}</b> <span class="muted">${esc(d.code)}</span>
-        <div class="muted">${when(d.created_at)} · ${d.people} people${d.is_demo ? " · demo" : ""}</div></div>
-      <button class="small" data-restore="${d.id}">Bring back</button></div>`).join("")}`;
-  box.addEventListener("click", async (e) => {
-    const id = e.target.closest("[data-restore]")?.dataset.restore;
-    if (!id) return;
-    try { await call("PATCH", `/api/o/d/${id}`, { archived: false }); location.href = `/o/d/${id}`; } catch (err) { fail(err); }
   });
 }
 

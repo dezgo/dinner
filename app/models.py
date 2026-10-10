@@ -82,6 +82,8 @@ class Dinner(SQLModel, table=True):
     payment_window_ends_at: datetime | None = None
     # Everyone's share as locked at the most recent finalisation.
     final_shares: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    # No longer used: dinners now fold away on their own. Kept because older
+    # databases have the column as NOT NULL.
     archived: bool = False
 
     created_at: datetime = Field(default_factory=utcnow)

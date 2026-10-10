@@ -82,7 +82,7 @@ uvicorn app.main:app --port 8080
 Open http://127.0.0.1:8080/o. Guests on the same Wi-Fi can use your LAN address
 if you set `PUBLIC_BASE_URL=http://<your-ip>:8080`.
 
-Tests: `pytest` (111 tests, no network). Lint: `ruff check . && ruff format --check .`
+Tests: `pytest` (110 tests, no network). Lint: `ruff check . && ruff format --check .`
 
 ### Server (do-personal)
 

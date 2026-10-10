@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
-from sqlmodel import Session, col, func, select
+from sqlmodel import Session, col, select
 
 from app.config import get_settings
 from app.db import get_session, locked_write, session_scope
@@ -93,8 +93,8 @@ def logout(response: Response):
 
 # ------------------------------------------------------------------ dinners
 @api.get("/dinners")
-def list_dinners(archived: bool = False, s: Session = Depends(get_session)):
-    rows = s.exec(select(Dinner).where(Dinner.archived == archived).order_by(col(Dinner.created_at).desc())).all()
+def list_dinners(s: Session = Depends(get_session)):
+    rows = s.exec(select(Dinner).order_by(col(Dinner.created_at).desc())).all()
     out = []
     for d in rows:
         st = payments.statuses(s, d)
@@ -113,10 +113,8 @@ def list_dinners(archived: bool = False, s: Session = Depends(get_session)):
             }
         )
     review = len([t for t in payments.review_queue(s, include_unmatched=False) if not t.is_simulated])
-    archived_count = s.exec(select(func.count()).select_from(Dinner).where(Dinner.archived == True)).one()  # noqa: E712
     return {
         "dinners": out,
-        "archived_count": archived_count,
         "review_count": review,
         "profile_ready": bool(payment_profile(s).get("payid")),
     }
@@ -203,14 +201,6 @@ def edit_dinner(dinner_id: str, body: dict = Body(...)):
             restaurants.link(s, d)
         if "table_label" in body:
             d.table_label = dinners.clean_table(body["table_label"])
-        if "archived" in body and bool(body["archived"]) != d.archived:
-            d.archived = bool(body["archived"])
-            audit(
-                s,
-                d.id,
-                "organiser",
-                "Cleared from the dinner list" if d.archived else "Brought back to the dinner list",
-            )
         touch(s, d)
     return {"ok": True}
 
