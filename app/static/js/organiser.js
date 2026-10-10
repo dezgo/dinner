@@ -4,6 +4,8 @@ import { $, $$, api, ApiError, centsToInput, copy, esc, explainError, live, mone
 const app = $("#app");
 const view = document.body.dataset.view;
 const dinnerId = document.body.dataset.dinner;
+// The restaurant page: the same menu screen as a dinner's Menu tab, for its saved menu.
+const restaurantId = document.body.dataset.restaurant;
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
 prefsControls($("#prefs"));
@@ -132,7 +134,8 @@ function startAtSheet(r) {
         : old ? `<button class="primary block" data-mode="scan">Use it and scan the menu again</button><button class="block" data-mode="saved">Just use the saved menu</button>`
         : `<button class="primary block" data-mode="saved">Start with the saved menu</button><button class="block" data-mode="scan">Use it and scan the menu again</button>`}
       ${r.dishes ? `<p class="muted">Scanning again keeps guests on the saved menu meanwhile, updates dishes in place and notes what changed.</p>` : ""}
-    </form>`);
+    </form>
+    ${restaurantId ? "" : `<p class="center"><a href="/o/r/${r.id}">${r.dishes ? "See or update the menu" : "Add the menu now"}, without starting a dinner</a></p>`}`);
   $("#startat", s.el).addEventListener("submit", async (e) => {
     e.preventDefault();
     const mode = e.submitter?.dataset.mode || "saved";
@@ -227,8 +230,8 @@ const openEditors = new Set();
 const nameOf = (id) => S.participants.find((p) => p.id === id)?.name || "?";
 const lineCalc = (l) => S.bill.lines[l.id] || { amount: 0, shares: {}, unallocated: 0 };
 const locked = () => S.dinner.status === "finalised";
-const gBase = () => `/api/d/${S.public_token}`;
-const oBase = `/api/o/d/${dinnerId}`;
+const gBase = () => (restaurantId ? oBase : `/api/d/${S.public_token}`);
+const oBase = restaurantId ? `/api/o/r/${restaurantId}` : `/api/o/d/${dinnerId}`;
 
 let refreshTimer;
 const refreshSoon = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); };
@@ -237,7 +240,28 @@ async function refresh() {
   // Nor while the camera or photo picker is open — the photo comes back to this page.
   if (document.activeElement?.closest("form[data-keep]") || photoPicking) { refreshTimer = setTimeout(refresh, 1500); return; }
   S = await call("GET", `${oBase}/state`);
-  renderDinner();
+  (restaurantId ? renderRestaurant : renderDinner)();
+}
+
+// ------------------------------------------------------- restaurant page
+function renderRestaurant() {
+  const r = S.restaurant;
+  document.title = `${r.name} — organiser`;
+  $("#title").textContent = r.name;
+  const scroll = window.scrollY;
+  app.innerHTML = `
+    <div class="wrap">
+      <p style="margin:.75rem 0 0"><a href="/o">← All dinners</a></p>
+      <section class="card stack">
+        <h1 style="margin:0">${esc(r.name)}</h1>
+        <p class="muted">${r.visits ? `${r.visits} visit${r.visits === 1 ? "" : "s"}, last ${ago(r.last_visit)}` : "Not been yet"} ·
+          ${r.dishes ? `menu updated ${dayOf(r.menu_updated_at)} (${ago(r.menu_updated_at)})` : "no menu saved yet"}</p>
+        <button class="primary block" data-startdinner>Start a dinner here</button>
+      </section>
+      <div id="pane"></div>
+    </div>`;
+  paneMenu();
+  window.scrollTo(0, scroll);
 }
 
 function renderDinner() {
@@ -348,6 +372,7 @@ function emptyTray(key) {
 }
 
 function paneMenu() {
+  const place = Boolean(restaurantId);
   const m = S.menu;
   const cats = m.categories;
   const itemsFor = (pid) => m.items.filter((i) => i.page_id === pid);
@@ -356,7 +381,7 @@ function paneMenu() {
   const rescanned = m.pages.some((p) => !p.from_saved && p.kind === "menu" && ["review", "published"].includes(p.status));
   const unseen = m.items.filter((i) => i.from_saved);
   const savedNote = !fromSaved ? "" : !rescanned
-    ? `<div class="banner info">This is the menu saved from your last visit${S.restaurant?.menu_updated_at ? ` (${dayOf(S.restaurant.menu_updated_at)})` : ""} — guests can already see it.
+    ? place ? "" : `<div class="banner info">This is the menu saved from your last visit${S.restaurant?.menu_updated_at ? ` (${dayOf(S.restaurant.menu_updated_at)})` : ""} — guests can already see it.
         If the menu in front of you looks different, photograph it again: matching dishes are updated, new ones added, and each change is noted.</div>`
     : unseen.length ? `<div class="banner warn"><b>${unseen.length} saved dish${unseen.length > 1 ? "es weren't" : " wasn't"} on today's scan:</b> ${unseen.map((i) => esc(i.name)).join(", ")}.
         If you photographed the whole menu, ${unseen.length > 1 ? "they've" : "it's"} probably gone.
@@ -364,31 +389,32 @@ function paneMenu() {
   $("#pane").innerHTML = `
     ${savedNote}
     <section class="card stack">
-      <h2>${fromSaved ? "Scan the menu again" : "Add menu photos"}</h2>
+      <h2>${place ? (m.pages.length ? "Photograph the menu again" : "Add the menu") : fromSaved ? "Scan the menu again" : "Add menu photos"}</h2>
       <p class="muted">Several pages? Take them one after another — they wait here until you send them. Found the menu online? Choose its PDF instead — every page is read.</p>
       <form id="up" class="stack">
         <div data-tray="menu"></div>
-        <div class="row"><select id="kind" style="width:auto"><option value="menu">Menu pages</option><option value="specials">Specials / tonight only</option></select>
+        <div class="row">${place ? '<input type="hidden" id="kind" value="menu">' : '<select id="kind" style="width:auto"><option value="menu">Menu pages</option><option value="specials">Specials / tonight only</option></select>'}
         <button class="primary grow" id="upbtn">Upload</button></div>
       </form>
-      ${!S.extraction_enabled ? `<div class="banner info">Photo reading is off on this server, so you'll type dishes in below. ${S.dinner.is_demo ? "Sample photos from the demo still read." : ""}</div>` : ""}
-      <p class="muted">Share the QR code straight away — guests see each page as soon as you publish it.</p>
+      ${!S.extraction_enabled ? `<div class="banner info">Photo reading is off on this server, so you'll type dishes in below. ${S.dinner?.is_demo ? "Sample photos from the demo still read." : ""}</div>` : ""}
+      <p class="muted">${place ? "Check each page once it's read, then save it to the menu. Your next dinner here starts with it."
+        : "Share the QR code straight away — guests see each page as soon as you publish it."}</p>
     </section>
     ${m.pages.map((p) => {
-      const [label, tone] = PAGE_STATE[p.status] || [p.status, ""];
+      const [label, tone] = place && p.status === "published" ? ["On the menu", "good"] : PAGE_STATE[p.status] || [p.status, ""];
       const items = itemsFor(p.id);
       const flagged = items.filter((i) => i.flags.length).length;
       return `<section class="card">
         <div class="row">
           ${p.image ? `<a href="${gBase()}/image/${esc(p.image)}" target="_blank" rel="noopener"><img class="thumb" src="${gBase()}/image/${esc(p.image)}" alt="Menu page"></a>` : ""}
-          <div class="grow"><b>${p.kind === "specials" ? "Specials" : p.from_saved ? "Saved menu page" : "Menu page"}</b> <span class="state ${tone}">${p.status === "processing" ? '<span class="spinner"></span> ' : ""}${label}</span>
+          <div class="grow"><b>${p.kind === "specials" ? "Specials" : p.from_saved && !place ? "Saved menu page" : "Menu page"}</b> <span class="state ${tone}">${p.status === "processing" ? '<span class="spinner"></span> ' : ""}${label}</span>
             <div class="muted">${items.length} dishes${flagged ? ` · <b>${flagged} flagged</b>` : ""}</div>
             ${p.error ? `<div class="banner bad">${esc(p.error)}</div>` : ""}
             ${(p.flags || []).map((f) => `<div class="muted">⚠ ${esc(f)}</div>`).join("")}</div>
         </div>
         <div class="row" style="margin-top:.5rem">
-          ${p.status === "review" ? `<button class="primary small" data-page="${p.id}" data-act="publish">Publish to guests</button>` : ""}
-          ${p.status === "published" ? `<button class="small" data-page="${p.id}" data-act="unpublish">Hide from guests</button>` : ""}
+          ${p.status === "review" ? `<button class="primary small" data-page="${p.id}" data-act="publish">${place ? "Save to menu" : "Publish to guests"}</button>` : ""}
+          ${p.status === "published" ? `<button class="small" data-page="${p.id}" data-act="unpublish">${place ? "Take off the menu" : "Hide from guests"}</button>` : ""}
           ${p.status === "failed" ? `<button class="small" data-page="${p.id}" data-act="retry">Try again</button>` : ""}
           <button class="small danger" data-delpage="${p.id}">Delete page</button>
         </div>
@@ -399,14 +425,14 @@ function paneMenu() {
       <h2>Typed in by hand${manual.length ? ` (${manual.length})` : ""}</h2>
       ${manual.map(itemRow).join("")}
       <form id="additem" data-keep class="stack" style="margin-top:.75rem">
-        <h3>Add a dish or special</h3>
+        <h3>${place ? "Add a dish" : "Add a dish or special"}</h3>
         <div><label for="ni">Name</label><input id="ni" required maxlength="120"></div>
         <div class="field-row">
           <div><label for="np">Price</label><input id="np" inputmode="decimal" placeholder="blank if unknown"></div>
           <div><label for="nc">Section</label><select id="nc"><option value="">—</option>${cats.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>
         </div>
         <div><label for="nd">Description (as printed)</label><input id="nd" maxlength="400"></div>
-        <label class="check"><input type="checkbox" id="nsp"> Tonight's special</label>
+        ${place ? "" : '<label class="check"><input type="checkbox" id="nsp"> Tonight\'s special</label>'}
         <button class="primary">Add dish</button>
       </form>
       <form id="addcat" data-keep class="row" style="margin-top:.75rem"><input id="ncat" class="grow" placeholder="New section name"><button>Add section</button></form>
@@ -433,7 +459,7 @@ function paneMenu() {
     if ($("#np").value.trim() && price == null) { toast("Price like 24.50", true); return; }
     try {
       await call("POST", `${oBase}/items`, { name: $("#ni").value, price_cents: price, description: $("#nd").value,
-        category_id: $("#nc").value || null, is_special: $("#nsp").checked });
+        category_id: $("#nc").value || null, is_special: Boolean($("#nsp")?.checked) });
       e.target.reset();
       refresh();
     } catch (err) { fail(err); }
@@ -461,7 +487,7 @@ function itemRow(i) {
     <div class="grow">
       <b>${esc(i.name)}</b> <span class="muted">${esc(cat?.name || "")}</span>
       <div class="muted">${price}${i.price_text ? ` · printed “${esc(i.price_text)}”` : ""}</div>
-      ${i.change_note ? `<div><span class="badge special">${i.change_note === "New" ? "New since last visit" : esc(i.change_note)}</span></div>` : ""}
+      ${i.change_note ? `<div><span class="badge special">${i.change_note === "New" ? (restaurantId ? "New" : "New since last visit") : esc(i.change_note)}</span></div>` : ""}
       <div class="badges">${i.labels.map((l) => `<span class="badge">${esc(l)}</span>`).join("")}
         ${v === "marked" ? '<span class="badge vegan">Vegan (menu)</span>' : v === "on_request" ? '<span class="badge vegan">Vegan on request</span>' : v === "possible" ? '<span class="badge maybe">Possibly vegan (AI)</span>' : ""}
         ${i.unavailable ? '<span class="badge off">Unavailable</span>' : ""}${i.is_special ? '<span class="badge special">Special</span>' : ""}</div>
@@ -470,7 +496,7 @@ function itemRow(i) {
     </div>
     <div class="stack" style="flex:none">
       <button class="small" data-edititem="${i.id}">${open ? "Close" : "Edit"}</button>
-      <button class="small" data-avail="${i.id}">${i.unavailable ? "Available" : "Sold out"}</button>
+      ${restaurantId ? "" : `<button class="small" data-avail="${i.id}">${i.unavailable ? "Available" : "Sold out"}</button>`}
     </div>
   </div>`;
 }
@@ -489,7 +515,7 @@ function itemEditor(i) {
     <div class="field-row"><div><label>Vegan badge</label><select name="vegan">
       ${[["", "None"], ["marked", "Vegan (menu says so)"], ["on_request", "Vegan on request"], ["possible", "Possibly vegan (ask staff)"]].map(([k, l]) => `<option value="${k}" ${(i.vegan?.status || "") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
       <div><label>Vegan note</label><input name="vegan_note" value="${esc(i.vegan?.note || "")}" placeholder="e.g. without ghee"></div></div>
-    <label class="check"><input type="checkbox" name="special" ${i.is_special ? "checked" : ""}> Tonight's special</label>
+    ${restaurantId ? "" : `<label class="check"><input type="checkbox" name="special" ${i.is_special ? "checked" : ""}> Tonight's special</label>`}
     ${i.flags.length ? `<label class="check"><input type="checkbox" name="clearflags"> I've checked the flagged details</label>` : ""}
     <div class="row"><button class="primary grow">Save</button><button type="button" class="danger small" data-delitem="${i.id}">Delete</button></div>
   </form>`;
@@ -893,6 +919,7 @@ document.addEventListener("click", async (e) => {
   const act = async (fn) => { try { await fn(); } catch (err) { fail(err); } refresh(); };
   if (d.dtab) { dtab = d.dtab; try { sessionStorage.setItem(`dt_otab_${dinnerId}`, dtab); } catch { /* fine */ } renderDinner(); window.scrollTo(0, 0); }
   else if (d.copy !== undefined) copy(d.copy, "Link");
+  else if (d.startdinner !== undefined) startAtSheet(S.restaurant);
   else if (d.page) act(() => call("POST", `${oBase}/pages/${d.page}/${d.act}`));
   else if (d.dropunseen !== undefined) act(() => call("POST", `${oBase}/menu/drop-unseen`));
   else if (d.delpage) { if (confirmSheet("Delete this page and its dishes? Dishes already ordered are kept (hidden from the menu).", () => act(() => call("DELETE", `${oBase}/pages/${d.delpage}`)))) return; }
@@ -983,7 +1010,11 @@ function setConn(ok) {
   try {
     if (view === "home") await home();
     else if (view === "settings") await settings();
-    else if (view === "dinner") {
+    else if (view === "restaurant") {
+      await refresh();
+      // No live channel for a restaurant: check back while pages are being read.
+      setInterval(() => { if (S.menu.pages.some((p) => p.status === "processing")) refresh(); }, 3000);
+    } else if (view === "dinner") {
       await refresh();
       live(`/api/d/${S.public_token}/events`, { onRevision: refreshSoon, onStatus: setConn });
     }

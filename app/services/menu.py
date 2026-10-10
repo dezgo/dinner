@@ -3,17 +3,21 @@
 A page moves processing -> review -> published. Guests see dishes from
 published pages plus anything the organiser typed in by hand, so reviewed
 pages can be browsed while others are still being read.
+
+A menu belongs to a dinner, or to a restaurant (its saved menu, updated
+between visits). `Owner` hides the difference from everything here.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from fastapi import HTTPException
 from sqlmodel import Session, col, select
 
 from app.db import locked_write, session_scope
-from app.models import Dinner, MenuCategory, MenuItem, MenuPage
+from app.models import Dinner, MenuCategory, MenuItem, MenuPage, Restaurant, utcnow
 from app.services import jobs, restaurants
 from app.services.events import audit, touch
 from app.services.extraction import (
@@ -30,6 +34,58 @@ logger = logging.getLogger(__name__)
 DIET_TAGS = {"vegetarian", "vegan", "gluten_free", "dairy_free", "nut_free", "contains_nuts", "halal", "spicy"}
 
 
+@dataclass
+class Owner:
+    """Whose menu: a dinner's, or a restaurant's saved one."""
+
+    dinner: Dinner | None = None
+    restaurant: Restaurant | None = None
+
+    @property
+    def id(self) -> str:
+        return self.dinner.id if self.dinner else self.restaurant.id
+
+    @property
+    def folder(self) -> str:
+        """Where its photos live under the upload directory."""
+        return self.dinner.id if self.dinner else f"r{self.restaurant.id}"
+
+    @property
+    def is_demo(self) -> bool:
+        return bool(self.dinner and self.dinner.is_demo)
+
+    def fields(self) -> dict:
+        return {"dinner_id": self.dinner.id} if self.dinner else {"restaurant_id": self.restaurant.id}
+
+    def of(self, model):
+        """A where-clause for this owner's rows of a menu table."""
+        return model.dinner_id == self.id if self.dinner else model.restaurant_id == self.id
+
+    def owns(self, row) -> bool:
+        if row is None:
+            return False
+        return row.dinner_id == self.id if self.dinner else row.restaurant_id == self.id
+
+
+def owner_of(s: Session, row) -> Owner:
+    if row.dinner_id:
+        return Owner(dinner=s.get(Dinner, row.dinner_id))
+    return Owner(restaurant=s.get(Restaurant, row.restaurant_id))
+
+
+def changed(s: Session, owner: Owner, *, saved: bool = True) -> None:
+    """After a change to a menu: tell a dinner's screens (and keep its restaurant's
+    saved copy current), or note when a restaurant's own menu was last edited."""
+    if owner.dinner:
+        if saved:
+            restaurants.save_menu(s, owner.dinner)
+        touch(s, owner.dinner, "menu")
+    elif saved:
+        owner.restaurant.menu_updated_at = utcnow()
+        owner.restaurant.menu_dinner_id = None
+        s.add(owner.restaurant)
+
+
 def queue_page(page_id: str) -> None:
     jobs.submit(process_page, page_id)
 
@@ -39,10 +95,10 @@ def process_page(page_id: str) -> None:
         page = s.get(MenuPage, page_id)
         if page is None or page.status != "processing":
             return
-        dinner = s.get(Dinner, page.dinner_id)
-        image = read_image(page.dinner_id, page.image_file)
-        pdf = read_page_pdf(page.dinner_id, page.image_file)
-        demo = bool(dinner and dinner.is_demo)
+        owner = owner_of(s, page)
+        image = read_image(owner.folder, page.image_file)
+        pdf = read_page_pdf(owner.folder, page.image_file)
+        demo = owner.is_demo
     try:
         result = get_extractor(demo=demo).menu(image, "image/jpeg", pdf=pdf)
     except ExtractionError as e:
@@ -63,20 +119,20 @@ def _fail(page_id: str, message: str) -> None:
         page.status = "failed"
         page.error = message
         s.add(page)
-        touch(s, s.get(Dinner, page.dinner_id))
+        changed(s, owner_of(s, page), saved=False)
 
 
-def _category(s: Session, dinner_id: str, page_id: str, name: str, cache: dict) -> MenuCategory:
+def _category(s: Session, owner: Owner, page_id: str, name: str, cache: dict) -> MenuCategory:
     key = name.strip().lower() or "menu"
     if key in cache:
         return cache[key]
-    existing = s.exec(select(MenuCategory).where(MenuCategory.dinner_id == dinner_id)).all()
+    existing = s.exec(select(MenuCategory).where(owner.of(MenuCategory))).all()
     for c in existing:
         if c.name.strip().lower() == key:
             cache[key] = c
             return c
     count = len(existing)
-    cat = MenuCategory(dinner_id=dinner_id, page_id=page_id, name=name.strip() or "Menu", sort=count)
+    cat = MenuCategory(**owner.fields(), page_id=page_id, name=name.strip() or "Menu", sort=count)
     s.add(cat)
     cache[key] = cat
     return cat
@@ -95,22 +151,20 @@ def apply_extraction(page_id: str, result: MenuExtraction) -> None:
         page = s.get(MenuPage, page_id)
         if page is None or page.status != "processing":
             return
-        dinner = s.get(Dinner, page.dinner_id)
+        owner = owner_of(s, page)
         legend = {e.symbol.strip().upper(): e.meaning for e in result.legend}
         page.legend = [{"symbol": e.symbol, "meaning": e.meaning} for e in result.legend]
         page.flags = list(result.page_notes)
         cache: dict = {}
-        order = _next_item_sort(s, dinner.id)
+        order = _next_item_sort(s, owner)
         # Rescanning a restaurant's saved menu: matching dishes are updated in
         # place (with a note of what changed) rather than added twice.
         rescan = page.kind != "specials" and bool(
-            s.exec(
-                select(MenuPage.id).where(MenuPage.dinner_id == dinner.id, col(MenuPage.from_saved).is_(True))
-            ).first()  # noqa: E712
+            s.exec(select(MenuPage.id).where(owner.of(MenuPage), col(MenuPage.from_saved).is_(True))).first()  # noqa: E712
         )
-        saved = restaurants.saved_items(s, dinner.id) if rescan else {}
+        saved = restaurants.saved_items(s, owner) if rescan else {}
         for cat_x in result.categories:
-            cat = _category(s, dinner.id, page.id, cat_x.name, cache)
+            cat = _category(s, owner, page.id, cat_x.name, cache)
             if cat_x.note and not cat.note:
                 cat.note = cat_x.note
             if cat_x.extras:
@@ -153,7 +207,7 @@ def apply_extraction(page_id: str, result: MenuExtraction) -> None:
                 order += 1
                 s.add(
                     MenuItem(
-                        dinner_id=dinner.id,
+                        **owner.fields(),
                         page_id=page.id,
                         category_id=cat.id,
                         is_special=page.kind == "specials",
@@ -165,34 +219,31 @@ def apply_extraction(page_id: str, result: MenuExtraction) -> None:
         if rescan:
             # A saved page whose dishes were all found again is just an old photo now.
             s.flush()
-            for old in s.exec(
-                select(MenuPage).where(MenuPage.dinner_id == dinner.id, col(MenuPage.from_saved).is_(True))
-            ).all():
+            for old in s.exec(select(MenuPage).where(owner.of(MenuPage), col(MenuPage.from_saved).is_(True))).all():
                 if not s.exec(select(MenuItem.id).where(MenuItem.page_id == old.id)).first():
                     s.delete(old)
         page.status = "review"
         page.error = None
         s.add(page)
-        audit(s, dinner.id, "system", f"Read menu page ({sum(len(c.items) for c in result.categories)} dishes)")
-        touch(s, dinner, "menu")
+        if owner.dinner:
+            audit(s, owner.id, "system", f"Read menu page ({sum(len(c.items) for c in result.categories)} dishes)")
+        changed(s, owner, saved=False)
 
 
-def _next_item_sort(s: Session, dinner_id: str) -> int:
-    last = s.exec(
-        select(MenuItem.sort).where(MenuItem.dinner_id == dinner_id).order_by(col(MenuItem.sort).desc())
-    ).first()
+def _next_item_sort(s: Session, owner: Owner) -> int:
+    last = s.exec(select(MenuItem.sort).where(owner.of(MenuItem)).order_by(col(MenuItem.sort).desc())).first()
     return last or 0
 
 
-def visible_page_ids(s: Session, dinner_id: str) -> set[str]:
-    return set(s.exec(select(MenuPage.id).where(MenuPage.dinner_id == dinner_id, MenuPage.status == "published")).all())
+def visible_page_ids(s: Session, owner: Owner) -> set[str]:
+    return set(s.exec(select(MenuPage.id).where(owner.of(MenuPage), MenuPage.status == "published")).all())
 
 
-def menu_items(s: Session, dinner_id: str, *, include_unpublished: bool) -> list[MenuItem]:
-    items = s.exec(select(MenuItem).where(MenuItem.dinner_id == dinner_id).order_by(col(MenuItem.sort))).all()
+def menu_items(s: Session, owner: Owner, *, include_unpublished: bool) -> list[MenuItem]:
+    items = s.exec(select(MenuItem).where(owner.of(MenuItem)).order_by(col(MenuItem.sort))).all()
     if include_unpublished:
         return list(items)
-    published = visible_page_ids(s, dinner_id)
+    published = visible_page_ids(s, owner)
     return [i for i in items if i.page_id is None or i.page_id in published]
 
 

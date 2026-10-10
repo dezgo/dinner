@@ -22,7 +22,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from app import models  # noqa: F401  (registers tables)
 from app.config import get_settings
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 write_lock = threading.RLock()
 _engine: Engine | None = None
@@ -58,6 +58,22 @@ def reset_engine() -> None:
     _engine = None
 
 
+def _rebuild(conn, table: str) -> None:
+    """Recreate a table from its model, keeping its rows. SQLite can't loosen a
+    NOT NULL or add a foreign key in place. Nothing references these tables."""
+    new = SQLModel.metadata.tables[table]
+    old_cols = [r[1] for r in conn.exec_driver_sql(f"PRAGMA table_info({table})")]
+    for (index,) in conn.exec_driver_sql(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL", (table,)
+    ).all():
+        conn.exec_driver_sql(f"DROP INDEX {index}")
+    conn.exec_driver_sql(f"ALTER TABLE {table} RENAME TO {table}_old")
+    new.create(conn)
+    cols = ", ".join(c for c in old_cols if c in new.c)
+    conn.exec_driver_sql(f"INSERT INTO {table} ({cols}) SELECT {cols} FROM {table}_old")  # noqa: S608 - our own schema names
+    conn.exec_driver_sql(f"DROP TABLE {table}_old")
+
+
 def init_db() -> None:
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
@@ -85,6 +101,10 @@ def init_db() -> None:
         if 0 < current < 4:
             # 4: no more clearing dinners; cleared ones join the rest under "Earlier".
             conn.exec_driver_sql("UPDATE dinner SET archived = 0")
+        if 0 < current < 5:
+            # 5: a restaurant can own menu rows, so their dinner_id may be empty.
+            for table in ("menupage", "menucategory", "menuitem"):
+                _rebuild(conn, table)
         if current < SCHEMA_VERSION:
             conn.exec_driver_sql(f"PRAGMA user_version={SCHEMA_VERSION}")
 

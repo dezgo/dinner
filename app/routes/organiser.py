@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from sqlmodel import Session, col, select
 
 from app.config import get_settings
@@ -13,10 +13,10 @@ from app.security import is_organiser, password_ok, rate_limit, require_organise
 from app.services import dinners, finalise, menu, payments, reconcile, restaurants, up
 from app.services.billing import active_receipt, bill_for
 from app.services.events import ORGANISER_CHANNEL, audit, broker, touch
-from app.services.images import ImageRejected, split_uploads, store_page
+from app.services.images import ImageRejected, image_path, split_uploads, store_page
 from app.services.orders import Actor
 from app.services.qr import qr_svg
-from app.services.state import organiser_state, payment_profile
+from app.services.state import menu_state, organiser_state, payment_profile
 from app.templating import render
 
 router = APIRouter()
@@ -34,12 +34,6 @@ def _dinner(s: Session, dinner_id: str) -> Dinner:
     if d is None:
         raise HTTPException(404, "Dinner not found.")
     return d
-
-
-def _menu_changed(s: Session, d: Dinner) -> None:
-    """Tell screens the menu moved, and keep the restaurant's saved copy current."""
-    restaurants.save_menu(s, d)
-    touch(s, d, "menu")
 
 
 def _organiser_actor(s: Session, dinner: Dinner) -> Actor:
@@ -74,6 +68,13 @@ def dinner_page(dinner_id: str, request: Request):
     if not is_organiser(request):
         return RedirectResponse("/o/login", 303)
     return render(request, "organiser.html", {"view": "dinner", "dinner_id": dinner_id})
+
+
+@router.get("/o/r/{rid}")
+def restaurant_page(rid: str, request: Request):
+    if not is_organiser(request):
+        return RedirectResponse("/o/login", 303)
+    return render(request, "organiser.html", {"view": "restaurant", "restaurant_id": rid})
 
 
 @router.post("/api/login")
@@ -216,38 +217,57 @@ def qr(dinner_id: str, request: Request, s: Session = Depends(get_session)):
 
 
 # --------------------------------------------------------------------- menu
-@api.post("/d/{dinner_id}/pages")
-async def upload_pages(dinner_id: str, files: list[UploadFile] = File(...), kind: str = Form("menu")):
-    if kind not in ("menu", "specials"):
+# The same menu routes serve a dinner (/d/{id}/…) and a restaurant's own saved
+# menu (/r/{id}/…), so both use one menu screen.
+def _owner(s: Session, scope: str, oid: str) -> menu.Owner:
+    if scope == "d":
+        return menu.Owner(dinner=_dinner(s, oid))
+    r = s.get(Restaurant, oid) if scope == "r" else None
+    if r is None:
+        raise HTTPException(404, "Restaurant not found." if scope == "r" else "Not found.")
+    return menu.Owner(restaurant=r)
+
+
+def _note(s: Session, owner: menu.Owner, message: str) -> None:
+    """Dinners keep a log; a restaurant's menu edits needn't."""
+    if owner.dinner:
+        audit(s, owner.id, "organiser", message)
+
+
+@api.post("/{scope}/{oid}/pages")
+async def upload_pages(scope: str, oid: str, files: list[UploadFile] = File(...), kind: str = Form("menu")):
+    if kind not in ("menu", "specials") or (scope == "r" and kind != "menu"):
         raise HTTPException(422, "Unknown page type.")
     blobs = [await f.read() for f in files[:12]]
     with session_scope() as s:
-        _dinner(s, dinner_id)
+        where = _owner(s, scope, oid).folder
     try:
-        names = [store_page(dinner_id, p) for p in split_uploads(blobs, 12)]
+        names = [store_page(where, p) for p in split_uploads(blobs, 12)]
     except ImageRejected as e:
         raise HTTPException(422, str(e)) from e
     ids = []
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
-        start = len(s.exec(select(MenuPage.id).where(MenuPage.dinner_id == d.id)).all())
+        owner = _owner(s, scope, oid)
+        if owner.restaurant:
+            restaurants.start_rescan(s, owner)
+        start = len(s.exec(select(MenuPage.id).where(owner.of(MenuPage))).all())
         for i, name in enumerate(names):
-            page = MenuPage(dinner_id=d.id, kind=kind, image_file=name, sort=start + i)
+            page = MenuPage(**owner.fields(), kind=kind, image_file=name, sort=start + i)
             s.add(page)
             ids.append(page.id)
-        _menu_changed(s, d)
+        menu.changed(s, owner, saved=False)
     for pid in ids:
         menu.queue_page(pid)
     return {"pages": ids}
 
 
-@api.post("/d/{dinner_id}/pages/{page_id}/{action}")
-def page_action(dinner_id: str, page_id: str, action: str):
+@api.post("/{scope}/{oid}/pages/{page_id}/{action}")
+def page_action(scope: str, oid: str, page_id: str, action: str):
     requeue = False
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
+        owner = _owner(s, scope, oid)
         page = s.get(MenuPage, page_id)
-        if page is None or page.dinner_id != d.id:
+        if not owner.owns(page):
             raise HTTPException(404, "Page not found.")
         if action == "publish":
             if page.status not in ("review", "published"):
@@ -268,40 +288,40 @@ def page_action(dinner_id: str, page_id: str, action: str):
         else:
             raise HTTPException(404, "Unknown action.")
         s.add(page)
-        _menu_changed(s, d)
+        menu.changed(s, owner)
     if requeue:
         menu.queue_page(page_id)
     return {"ok": True}
 
 
-@api.delete("/d/{dinner_id}/pages/{page_id}")
-def delete_page(dinner_id: str, page_id: str):
+@api.delete("/{scope}/{oid}/pages/{page_id}")
+def delete_page(scope: str, oid: str, page_id: str):
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
+        owner = _owner(s, scope, oid)
         page = s.get(MenuPage, page_id)
-        if page is None or page.dinner_id != d.id:
+        if not owner.owns(page):
             raise HTTPException(404, "Page not found.")
         for item in s.exec(select(MenuItem).where(MenuItem.page_id == page.id)).all():
             _delete_or_hide(s, item)
         s.delete(page)
-        _menu_changed(s, d)
+        menu.changed(s, owner)
     return {"ok": True}
 
 
-@api.post("/d/{dinner_id}/menu/drop-unseen")
-def drop_unseen(dinner_id: str):
+@api.post("/{scope}/{oid}/menu/drop-unseen")
+def drop_unseen(scope: str, oid: str):
     """After a rescan: remove saved dishes the new scan didn't find, and saved pages left empty."""
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
-        gone = s.exec(select(MenuItem).where(MenuItem.dinner_id == d.id, MenuItem.from_saved == True)).all()  # noqa: E712
+        owner = _owner(s, scope, oid)
+        gone = s.exec(select(MenuItem).where(owner.of(MenuItem), MenuItem.from_saved == True)).all()  # noqa: E712
         for item in gone:
             _delete_or_hide(s, item)
         s.flush()
-        for page in s.exec(select(MenuPage).where(MenuPage.dinner_id == d.id, MenuPage.from_saved == True)).all():  # noqa: E712
+        for page in s.exec(select(MenuPage).where(owner.of(MenuPage), MenuPage.from_saved == True)).all():  # noqa: E712
             if not s.exec(select(MenuItem.id).where(MenuItem.page_id == page.id)).first():
                 s.delete(page)
-        audit(s, d.id, "organiser", f"Removed {len(gone)} saved dishes not on the new scan")
-        _menu_changed(s, d)
+        _note(s, owner, f"Removed {len(gone)} saved dishes not on the new scan")
+        menu.changed(s, owner)
     return {"removed": len(gone)}
 
 
@@ -319,26 +339,26 @@ def _delete_or_hide(s: Session, item: MenuItem) -> None:
         s.delete(item)
 
 
-@api.post("/d/{dinner_id}/categories")
-def add_category(dinner_id: str, body: dict = Body(...)):
+@api.post("/{scope}/{oid}/categories")
+def add_category(scope: str, oid: str, body: dict = Body(...)):
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
+        owner = _owner(s, scope, oid)
         name = str(body.get("name", "")).strip()[:80]
         if not name:
             raise HTTPException(422, "Name the section.")
-        count = len(s.exec(select(MenuCategory.id).where(MenuCategory.dinner_id == d.id)).all())
-        cat = MenuCategory(dinner_id=d.id, name=name, sort=count, extras=menu.clean_options(body.get("extras")))
+        count = len(s.exec(select(MenuCategory.id).where(owner.of(MenuCategory))).all())
+        cat = MenuCategory(**owner.fields(), name=name, sort=count, extras=menu.clean_options(body.get("extras")))
         s.add(cat)
-        _menu_changed(s, d)
+        menu.changed(s, owner)
     return {"id": cat.id}
 
 
-@api.patch("/d/{dinner_id}/categories/{cat_id}")
-def edit_category(dinner_id: str, cat_id: str, body: dict = Body(...)):
+@api.patch("/{scope}/{oid}/categories/{cat_id}")
+def edit_category(scope: str, oid: str, cat_id: str, body: dict = Body(...)):
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
+        owner = _owner(s, scope, oid)
         cat = s.get(MenuCategory, cat_id)
-        if cat is None or cat.dinner_id != d.id:
+        if not owner.owns(cat):
             raise HTTPException(404, "Section not found.")
         if "name" in body:
             cat.name = str(body["name"]).strip()[:80] or cat.name
@@ -347,53 +367,70 @@ def edit_category(dinner_id: str, cat_id: str, body: dict = Body(...)):
         if "extras" in body:
             cat.extras = menu.clean_options(body["extras"])
         s.add(cat)
-        _menu_changed(s, d)
+        menu.changed(s, owner)
     return {"ok": True}
 
 
-@api.post("/d/{dinner_id}/items")
-def add_item(dinner_id: str, body: dict = Body(...)):
+@api.post("/{scope}/{oid}/items")
+def add_item(scope: str, oid: str, body: dict = Body(...)):
     """Manual entry: specials, corrections, or a menu that couldn't be read."""
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
+        owner = _owner(s, scope, oid)
         if not str(body.get("name", "")).strip():
             raise HTTPException(422, "A dish needs a name.")
-        item = MenuItem(dinner_id=d.id, name="(new)", source="manual", sort=menu._next_item_sort(s, d.id) + 1)
-        if body.get("category_id"):
-            cat = s.get(MenuCategory, body["category_id"])
-            if cat is None or cat.dinner_id != d.id:
-                raise HTTPException(404, "Section not found.")
+        item = MenuItem(**owner.fields(), name="(new)", source="manual", sort=menu._next_item_sort(s, owner) + 1)
+        if body.get("category_id") and not owner.owns(s.get(MenuCategory, body["category_id"])):
+            raise HTTPException(404, "Section not found.")
         menu.update_item(s, item, body)
         item.version = 1
         s.add(item)
-        _menu_changed(s, d)
+        menu.changed(s, owner)
     return {"id": item.id}
 
 
-@api.patch("/d/{dinner_id}/items/{item_id}")
-def edit_item(dinner_id: str, item_id: str, body: dict = Body(...)):
+@api.patch("/{scope}/{oid}/items/{item_id}")
+def edit_item(scope: str, oid: str, item_id: str, body: dict = Body(...)):
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
+        owner = _owner(s, scope, oid)
         item = s.get(MenuItem, item_id)
-        if item is None or item.dinner_id != d.id:
+        if not owner.owns(item):
             raise HTTPException(404, "Dish not found.")
         menu.check_version(item, body.pop("version", None))
         menu.update_item(s, item, body)
-        audit(s, d.id, "organiser", f"Edited menu item {item.name}")
-        _menu_changed(s, d)
+        _note(s, owner, f"Edited menu item {item.name}")
+        menu.changed(s, owner)
     return {"ok": True, "version": item.version}
 
 
-@api.delete("/d/{dinner_id}/items/{item_id}")
-def delete_item(dinner_id: str, item_id: str):
+@api.delete("/{scope}/{oid}/items/{item_id}")
+def delete_item(scope: str, oid: str, item_id: str):
     with locked_write() as s:
-        d = _dinner(s, dinner_id)
+        owner = _owner(s, scope, oid)
         item = s.get(MenuItem, item_id)
-        if item is None or item.dinner_id != d.id:
+        if not owner.owns(item):
             raise HTTPException(404, "Dish not found.")
         _delete_or_hide(s, item)
-        _menu_changed(s, d)
+        menu.changed(s, owner)
     return {"ok": True}
+
+
+# -------------------------------------------------------------- restaurants
+@api.get("/r/{rid}/state")
+def restaurant_state(rid: str, s: Session = Depends(get_session)):
+    owner = _owner(s, "r", rid)
+    return {
+        "restaurant": next(r for r in restaurants.listing(s) if r["id"] == rid),
+        "menu": menu_state(s, owner, organiser=True),
+        "extraction_enabled": get_settings().extraction_enabled,
+    }
+
+
+@api.get("/r/{rid}/image/{name}")
+def restaurant_image(rid: str, name: str, s: Session = Depends(get_session)):
+    path = image_path(_owner(s, "r", rid).folder, name)
+    if path is None:
+        raise HTTPException(404, "Not found.")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
 
 
 # ------------------------------------------------------------------- people

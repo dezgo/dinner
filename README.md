@@ -18,6 +18,9 @@ paid back by PayID — with Up Bank spotting the transfers for you.
    screen, most recent first, each showing how old its saved menu is. Tap one to
    start with that menu (guests see it immediately), or to start with it and
    photograph the menu again. Menus over three months old suggest the rescan.
+   **Getting ready for somewhere?** Each restaurant has its own page (tap it, then
+   "See or update the menu"): add or rescan its menu ahead of time, check the
+   dishes and save them to the menu, without starting a dinner.
    If the menu has changed, scan it again: matching dishes are updated in place with a note of what changed
    ("Price was $24.00", "New since last visit"), and saved dishes the new scan
    didn't find are listed so you can remove them. Each dinner keeps its own copy,
@@ -82,7 +85,7 @@ uvicorn app.main:app --port 8080
 Open http://127.0.0.1:8080/o. Guests on the same Wi-Fi can use your LAN address
 if you set `PUBLIC_BASE_URL=http://<your-ip>:8080`.
 
-Tests: `pytest` (110 tests, no network). Lint: `ruff check . && ruff format --check .`
+Tests: `pytest` (114 tests, no network). Lint: `ruff check . && ruff format --check .`
 
 ### Server (do-personal)
 

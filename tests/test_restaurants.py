@@ -1,6 +1,7 @@
 """Restaurants remember their menu: saving, starting from it, rescanning."""
 
-from app.services.extraction import ExtractedCategory, MenuExtraction
+from app.services.extraction import CannedExtractor, ExtractedCategory, MenuExtraction
+from app.services.images import normalise
 from tests.conftest import Dinner, H
 from tests.test_menu import _item, png, upload_page
 
@@ -139,3 +140,102 @@ def test_start_a_dinner_by_picking_a_restaurant(dinner, organiser):
     assert set(names(picked)) == {"Steak"}
     gone = organiser.post("/api/o/dinners", json={"restaurant_id": "nope"}, headers=H)
     assert gone.status_code == 404
+
+
+# ------------------------------------------------------- restaurant page
+def place_id(org, name="Test Bistro") -> str:
+    return next(r["id"] for r in org.get("/api/o/restaurants").json()["restaurants"] if r["name"] == name)
+
+
+def place_scan(org, rid, colour, result: MenuExtraction) -> str:
+    image = png(colour)
+    CannedExtractor.register_menu(normalise(image), result)
+    r = org.post(
+        f"/api/o/r/{rid}/pages", files=[("files", ("m.png", image, "image/png"))], data={"kind": "menu"}, headers=H
+    )
+    assert r.status_code == 200, r.text
+    page = r.json()["pages"][0]
+    assert org.post(f"/api/o/r/{rid}/pages/{page}/publish", headers=H).status_code == 200
+    return page
+
+
+def place_items(org, rid) -> dict:
+    return {i["name"]: i for i in org.get(f"/api/o/r/{rid}/state").json()["menu"]["items"]}
+
+
+def test_add_a_menu_on_the_restaurant_page_without_a_dinner(organiser):
+    new_dinner(organiser, "Akiba")  # been once, never scanned
+    rid = place_id(organiser, "Akiba")
+    assert organiser.get(f"/api/o/r/{rid}/state").json()["restaurant"]["dishes"] == 0
+    page = place_scan(organiser, rid, (9, 9, 9), menu(_item(name="Bao", price_text="$9", price_cents=900)))
+
+    st = organiser.get(f"/api/o/r/{rid}/state").json()
+    assert st["restaurant"]["dishes"] == 1 and st["restaurant"]["menu_updated_at"]
+    assert st["restaurant"]["visits"] == 1  # editing the menu isn't a visit
+    image = st["menu"]["pages"][0]["image"]
+    assert organiser.get(f"/api/o/r/{rid}/image/{image}").status_code == 200
+    assert [d["restaurant_name"] for d in organiser.get("/api/o/dinners").json()["dinners"]] == ["Akiba"]
+
+    later = new_dinner(organiser, "Akiba")
+    assert set(names(later, guest=True)) == {"Bao"}
+    assert later.state()["menu"]["pages"][0]["from_saved"]
+    assert page != later.state()["menu"]["pages"][0]["id"]  # the dinner has its own copy
+
+
+def test_rescan_on_the_restaurant_page_updates_in_place(dinner, organiser):
+    scan_and_publish(
+        dinner,
+        (1, 2, 3),
+        menu(_item(name="Steak", price_text="$40", price_cents=4000), _item(name="Old Pie", price_cents=2200)),
+    )
+    rid = place_id(organiser)
+    place_scan(
+        organiser,
+        rid,
+        (7, 7, 7),
+        menu(_item(name="Steak", price_text="$45", price_cents=4500), _item(name="Burger", price_cents=2500)),
+    )
+    items = place_items(organiser, rid)
+    assert items["Steak"]["price_cents"] == 4500 and items["Steak"]["change_note"] == "Price was $40.00"
+    assert items["Burger"]["change_note"] == "New" and items["Old Pie"]["from_saved"]
+    assert organiser.post(f"/api/o/r/{rid}/menu/drop-unseen", headers=H).json()["removed"] == 1
+    assert set(place_items(organiser, rid)) == {"Steak", "Burger"}
+
+    # The old dinner keeps its own prices, and can't overwrite the newer edit.
+    assert names(dinner)["Steak"]["price_cents"] == 4000
+    dinner.add_item("Something old", 1000)
+    assert set(place_items(organiser, rid)) == {"Steak", "Burger"}
+    nxt = new_dinner(organiser)
+    assert names(nxt)["Steak"]["price_cents"] == 4500 and names(nxt)["Steak"]["change_note"] == ""
+
+
+def test_a_later_dinner_still_updates_the_restaurant(organiser):
+    new_dinner(organiser, "Akiba")
+    rid = place_id(organiser, "Akiba")
+    place_scan(organiser, rid, (9, 9, 9), menu(_item(name="Bao", price_cents=900)))
+    tonight = new_dinner(organiser, "Akiba")
+    tonight.add_item("Ramen", 2200)
+    assert set(place_items(organiser, rid)) == {"Bao", "Ramen"}
+
+
+def test_restaurant_page_edits_and_limits(organiser):
+    new_dinner(organiser, "Akiba")
+    rid = place_id(organiser, "Akiba")
+    item = organiser.post(f"/api/o/r/{rid}/items", json={"name": "Gyoza", "price_cents": 1200}, headers=H).json()["id"]
+    assert place_items(organiser, rid)["Gyoza"]["price_cents"] == 1200
+    v = place_items(organiser, rid)["Gyoza"]["version"]
+    r = organiser.patch(f"/api/o/r/{rid}/items/{item}", json={"version": v, "price_cents": 1300}, headers=H)
+    assert r.status_code == 200
+    assert place_items(organiser, rid)["Gyoza"]["price_cents"] == 1300
+    specials = organiser.post(
+        f"/api/o/r/{rid}/pages",
+        files=[("files", ("m.png", png((1, 1, 1)), "image/png"))],
+        data={"kind": "specials"},
+        headers=H,
+    )
+    assert specials.status_code == 422  # tonight-only belongs to a dinner
+    assert organiser.get("/api/o/r/nope/state").status_code == 404
+    # A dish from one place can't be edited through another.
+    other = new_dinner(organiser, "Elsewhere")
+    assert organiser.delete(f"/api/o/d/{other.id}/items/{item}", headers=H).status_code == 404
+    assert organiser.get(f"/o/r/{rid}").status_code == 200

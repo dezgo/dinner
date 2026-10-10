@@ -22,7 +22,7 @@ from app.models import (
 )
 from app.services import menu_share, payments, restaurants
 from app.services.billing import active_participants, active_receipt, bill_for, line_allocations, live_lines
-from app.services.menu import menu_items
+from app.services.menu import Owner, menu_items
 from app.services.orders import serialize_line
 from app.services.reconcile import serialize_receipt
 from app.services.up import get_setting
@@ -79,12 +79,14 @@ def _item(i: MenuItem) -> dict:
 
 
 def _menu(s: Session, dinner: Dinner, organiser: bool) -> dict:
-    pages = s.exec(select(MenuPage).where(MenuPage.dinner_id == dinner.id).order_by(col(MenuPage.sort))).all()
-    items = menu_items(s, dinner.id, include_unpublished=organiser)
+    return menu_state(s, Owner(dinner=dinner), organiser=organiser)
+
+
+def menu_state(s: Session, owner: Owner, *, organiser: bool) -> dict:
+    pages = s.exec(select(MenuPage).where(owner.of(MenuPage)).order_by(col(MenuPage.sort))).all()
+    items = menu_items(s, owner, include_unpublished=organiser)
     used_cats = {i.category_id for i in items}
-    cats = s.exec(
-        select(MenuCategory).where(MenuCategory.dinner_id == dinner.id).order_by(col(MenuCategory.sort))
-    ).all()
+    cats = s.exec(select(MenuCategory).where(owner.of(MenuCategory)).order_by(col(MenuCategory.sort))).all()
     visible_pages = [p for p in pages if organiser or p.status == "published"]
     return {
         "pages": [

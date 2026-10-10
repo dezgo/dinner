@@ -42,16 +42,17 @@ class Setting(SQLModel, table=True):
 
 
 class Restaurant(SQLModel, table=True):
-    """A place you go back to. Keeps its most recent menu so the next dinner
-    there starts with it already loaded. Each dinner still gets its own copy,
-    so a later change never alters an old bill."""
+    """A place you go back to. Owns a saved menu (MenuPage/MenuCategory/MenuItem
+    rows with restaurant_id set) so the next dinner there starts with it already
+    loaded. Each dinner still gets its own copy, so a later change never alters
+    an old bill."""
 
     id: str = Field(default_factory=new_id, primary_key=True)
     name: str
     name_key: str = Field(index=True, unique=True)  # lower-cased, spaces collapsed
-    # {"pages": [...], "categories": [...], "items": [...]} — see services/restaurants.py
+    # No longer used: the saved menu was kept here as JSON before it had its own rows.
     menu: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    menu_dinner_id: str | None = None  # the dinner the saved menu came from
+    menu_dinner_id: str | None = None  # the dinner the saved menu came from; None if edited directly
     menu_updated_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
@@ -112,7 +113,10 @@ class Participant(SQLModel, table=True):
 
 class MenuPage(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
-    dinner_id: str = Field(index=True, foreign_key="dinner.id")
+    # A menu belongs to a dinner, or to a restaurant (its saved menu, kept
+    # up to date between visits). Exactly one of these is set.
+    dinner_id: str | None = Field(default=None, index=True, foreign_key="dinner.id")
+    restaurant_id: str | None = Field(default=None, index=True, foreign_key="restaurant.id")
     kind: str = "menu"  # menu | specials | manual
     image_file: str | None = None
     # processing -> review -> published; or failed / manual
@@ -127,7 +131,8 @@ class MenuPage(SQLModel, table=True):
 
 class MenuCategory(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
-    dinner_id: str = Field(index=True, foreign_key="dinner.id")
+    dinner_id: str | None = Field(default=None, index=True, foreign_key="dinner.id")
+    restaurant_id: str | None = Field(default=None, index=True, foreign_key="restaurant.id")  # see MenuPage
     page_id: str | None = Field(default=None, index=True)
     name: str
     note: str = ""
@@ -137,7 +142,8 @@ class MenuCategory(SQLModel, table=True):
 
 class MenuItem(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
-    dinner_id: str = Field(index=True, foreign_key="dinner.id")
+    dinner_id: str | None = Field(default=None, index=True, foreign_key="dinner.id")
+    restaurant_id: str | None = Field(default=None, index=True, foreign_key="restaurant.id")  # see MenuPage
     page_id: str | None = Field(default=None, index=True)
     category_id: str | None = Field(default=None, index=True)
     name: str
