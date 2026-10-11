@@ -100,7 +100,7 @@ def allocations_of(s: Session, line_id: str) -> list[Allocation]:
 def participant_in(s: Session, dinner: Dinner, pid: str) -> Participant:
     p = s.get(Participant, pid)
     if p is None or p.dinner_id != dinner.id or p.removed:
-        raise HTTPException(422, "That person isn't at this dinner.")
+        raise HTTPException(422, "That person isn't at this meal.")
     return p
 
 
@@ -318,7 +318,7 @@ def join_line(s: Session, dinner: Dinner, actor: Actor, line_id: str, version: i
     ensure_open(dinner)
     me = actor.participant
     if me is None:
-        raise HTTPException(401, "Join the dinner first.")
+        raise HTTPException(401, "Join the meal first.")
     line = get_line(s, dinner, line_id)
     check_line_version(line, version)
     allocs = allocations_of(s, line.id)
@@ -351,7 +351,7 @@ def leave_line(s: Session, dinner: Dinner, actor: Actor, line_id: str, version: 
     ensure_open(dinner)
     target = pid or actor.pid
     if target is None:
-        raise HTTPException(401, "Join the dinner first.")
+        raise HTTPException(401, "Join the meal first.")
     if target != actor.pid and not actor.organiser:
         raise HTTPException(403, "Only the organiser can remove someone else.")
     line = get_line(s, dinner, line_id)

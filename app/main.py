@@ -83,7 +83,7 @@ async def lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
-        title="Dinner Tab", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
+        title="Meal Tab", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
     )
 
     @app.middleware("http")

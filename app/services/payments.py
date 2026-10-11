@@ -214,11 +214,11 @@ def evaluate(s: Session, tx: BankTransaction) -> tuple[str, Candidate | None, li
                 c,
                 cands,
                 (
-                    f"Only outstanding share of exactly {fmt(tx.amount_cents)} while this dinner's "
+                    f"Only outstanding share of exactly {fmt(tx.amount_cents)} while this meal's "
                     "payment window is open (no reference found)"
                 ),
             )
-        why = "Several dinners are collecting payments." if len(dinners) > 1 else "Conflicting details in the transfer."
+        why = "Several meals are collecting payments." if len(dinners) > 1 else "Conflicting details in the transfer."
         return "review", c, by_amount + others_named, f"Amount matches {c.participant.display_name}, but: {why}"
     if len(by_amount) > 1:
         return "review", None, by_amount, f"{len(by_amount)} people owe exactly {fmt(tx.amount_cents)}."
@@ -325,7 +325,7 @@ def confirm_transaction(s: Session, tx_id: str, participant_id: str) -> Payment:
         raise HTTPException(404, "Person not found.")
     dinner = s.get(Dinner, p.dinner_id)
     if dinner.is_demo != tx.is_simulated:
-        raise HTTPException(409, "Simulated transfers can only pay demo dinners, and real ones only real dinners.")
+        raise HTTPException(409, "Simulated transfers can only pay demo meals, and real ones only real meals.")
     pay = _confirm(
         s,
         tx,

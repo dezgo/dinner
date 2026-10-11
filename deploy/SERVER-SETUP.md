@@ -1,4 +1,9 @@
-# Dinner Tab on do-personal
+# Meal Tab on do-personal
+
+Formerly Dinner Tab. It answers on **mealtab.appfoundry.cc** and on the old
+**dinner.appfoundry.cc**, which must keep working for QR codes and guest links
+already handed out. Internal names (the `dinner` service, folders, database)
+are unchanged.
 
 Runs like the other side projects there (menuvi, mealops): a systemd service
 behind nginx, HTTPS from certbot.
@@ -30,9 +35,9 @@ Repository secrets (Settings → Secrets and variables → Actions):
 ENV=production
 SECRET_KEY=<long random>          # don't change: signs everyone out, breaks the Up webhook secret
 ADMIN_PASSWORD=<long random>
-TRUSTED_HOSTS=dinner.appfoundry.cc
+TRUSTED_HOSTS=mealtab.appfoundry.cc,dinner.appfoundry.cc
 TRUST_PROXY_HEADERS=true
-PUBLIC_BASE_URL=https://dinner.appfoundry.cc
+PUBLIC_BASE_URL=https://mealtab.appfoundry.cc
 ANTHROPIC_API_KEY=                # optional: photo reading
 UP_API_TOKEN=                     # optional: automatic payment detection
 ```
@@ -45,7 +50,7 @@ certificate is in place.
 ## One-off steps needing your sudo password
 
 ```bash
-sudo certbot --nginx -d dinner.appfoundry.cc
+sudo certbot --nginx -d mealtab.appfoundry.cc -d dinner.appfoundry.cc
 ```
 
 ## Don't

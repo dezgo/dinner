@@ -60,7 +60,7 @@ def _once(s: Session, dinner, op_id: str | None, fn):
 @router.get("/d/{public_token}")
 def guest_page(request: Request, ctx: GuestContext = Depends(guest_context)):
     return render(
-        request, "guest.html", {"token": ctx.dinner.public_token, "title": ctx.dinner.restaurant_name or "Dinner"}
+        request, "guest.html", {"token": ctx.dinner.public_token, "title": ctx.dinner.restaurant_name or "Meal"}
     )
 
 
@@ -126,7 +126,7 @@ def rename_me(public_token: str, request: Request, body: dict = Body(...)):
     with locked_write() as s:
         dinner, actor = _fresh(s, request, public_token)
         if actor.participant is None:
-            raise HTTPException(401, "Join the dinner first.")
+            raise HTTPException(401, "Join the meal first.")
         dinners.rename(s, dinner, actor.participant, body.get("name", ""))
     return {"ok": True}
 
@@ -136,7 +136,7 @@ def record(public_token: str, request: Request, body: dict = Body(...)):
     with locked_write() as s:
         dinner, actor = _fresh(s, request, public_token)
         if actor.participant is None and not actor.organiser:
-            raise HTTPException(401, "Join the dinner first.")
+            raise HTTPException(401, "Join the meal first.")
         return orders.record_line(s, dinner, actor, body)
 
 
@@ -200,7 +200,7 @@ def shortlist(public_token: str, request: Request, body: dict = Body(...)):
     with locked_write() as s:
         dinner, actor = _fresh(s, request, public_token)
         if actor.participant is None:
-            raise HTTPException(401, "Join the dinner first.")
+            raise HTTPException(401, "Join the meal first.")
         item = s.get(MenuItem, body.get("menu_item_id", ""))
         if item is None or item.dinner_id != dinner.id:
             raise HTTPException(404, "Not on this menu.")
@@ -217,7 +217,7 @@ def mark_sent(public_token: str, request: Request, body: dict = Body(...)):
     with locked_write() as s:
         dinner, actor = _fresh(s, request, public_token)
         if actor.participant is None:
-            raise HTTPException(401, "Join the dinner first.")
+            raise HTTPException(401, "Join the meal first.")
         payments.mark_sent(s, dinner, actor.participant, bool(body.get("sent", True)))
     return {"ok": True}
 
@@ -235,7 +235,7 @@ async def events(ctx: GuestContext = Depends(guest_context)):
 def image(name: str, ctx: GuestContext = Depends(guest_context), s: Session = Depends(get_session)):
     """Menu/receipt photos, only for people at this dinner."""
     if ctx.participant is None and not ctx.organiser:
-        raise HTTPException(401, "Join the dinner first.")
+        raise HTTPException(401, "Join the meal first.")
     if not ctx.organiser:
         page = s.exec(select(MenuPage).where(MenuPage.dinner_id == ctx.dinner.id, MenuPage.image_file == name)).first()
         receipts = s.exec(select(Receipt).where(Receipt.dinner_id == ctx.dinner.id)).all()

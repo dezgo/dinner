@@ -646,7 +646,7 @@ def simulate_payment(dinner_id: str, body: dict = Body(...)):
     with locked_write() as s:
         d = _dinner(s, dinner_id)
         if not d.is_demo:
-            raise HTTPException(403, "Simulated payments only work on demo dinners.")
+            raise HTTPException(403, "Simulated payments only work on demo meals.")
         tx = payments.ingest(
             s,
             {

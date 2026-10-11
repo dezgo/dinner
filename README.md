@@ -1,4 +1,6 @@
-# Dinner Tab
+# Meal Tab
+
+*(formerly Dinner Tab — breakfast, lunch or dinner)*
 
 Photograph the menu, show guests a QR code, let everyone record what they
 order and split shared dishes, reconcile with the restaurant's bill, and get
@@ -89,7 +91,7 @@ Tests: `pytest` (114 tests, no network). Lint: `ruff check . && ruff format --ch
 
 ### Server (do-personal)
 
-https://dinner.appfoundry.cc — a systemd service behind nginx on do-personal,
+https://mealtab.appfoundry.cc (the old dinner.appfoundry.cc still works) — a systemd service behind nginx on do-personal,
 like menuvi and mealops. Push to `main` deploys via GitHub Actions (lint → tests
 → SSH deploy → wait for healthy). Details: [`deploy/SERVER-SETUP.md`](deploy/SERVER-SETUP.md).
 

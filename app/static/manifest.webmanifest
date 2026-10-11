@@ -1,6 +1,6 @@
 {
-  "name": "Dinner Tab",
-  "short_name": "Dinner Tab",
+  "name": "Meal Tab",
+  "short_name": "Meal Tab",
   "description": "Read the menu, record orders, split the bill, get paid back.",
   "start_url": "/o",
   "scope": "/",

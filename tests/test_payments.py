@@ -150,7 +150,7 @@ def test_overlapping_dinners_amount_only_goes_to_review(organiser, dinner):
     other = Dinner(organiser, organiser.post("/api/o/dinners", json={"restaurant_name": "Two"}, headers=H).json()["id"])
     finalised(other, {"Tom": 4100})
     state, note = ingest(tx(4100))
-    assert state == "review" and "Several dinners" in note
+    assert state == "review" and "Several meals" in note
 
 
 def test_reference_with_wrong_amount_goes_to_review(dinner):

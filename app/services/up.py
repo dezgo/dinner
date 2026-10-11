@@ -134,7 +134,7 @@ class UpClient:
     def create_webhook(self, url: str) -> tuple[str, str]:
         r = self._http.post(
             "/webhooks",
-            json={"data": {"attributes": {"url": url, "description": "Dinner Tab payments"}}},
+            json={"data": {"attributes": {"url": url, "description": "Meal Tab payments"}}},
         )
         data = self._check(r)["data"]
         return data["id"], data["attributes"]["secretKey"]

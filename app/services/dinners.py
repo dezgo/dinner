@@ -52,7 +52,7 @@ def add_participant(s: Session, dinner: Dinner, name: str, *, is_organiser: bool
     name = clean_name(name)
     count = s.exec(select(func.count()).select_from(Participant).where(Participant.dinner_id == dinner.id)).one()
     if count >= MAX_PEOPLE:
-        raise HTTPException(409, "This dinner is full.")
+        raise HTTPException(409, "This meal is full.")
     # Duplicate display names are fine; the reference and id keep people apart.
     p = Participant(
         dinner_id=dinner.id,

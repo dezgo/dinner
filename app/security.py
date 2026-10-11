@@ -167,7 +167,7 @@ class GuestContext:
 
     def require_participant(self) -> Participant:
         if self.participant is None:
-            raise HTTPException(401, "Join the dinner first.")
+            raise HTTPException(401, "Join the meal first.")
         return self.participant
 
 

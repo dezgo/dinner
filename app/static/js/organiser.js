@@ -30,9 +30,9 @@ async function home() {
   const earlier = data.dinners.filter((d) => !isCurrent(d));
   app.innerHTML = `
     <div class="wrap">
-      <div class="row between" style="margin:1rem 0"><h1 style="margin:0">Dinners</h1><a href="/o/settings" class="btn">Settings</a></div>
+      <div class="row between" style="margin:1rem 0"><h1 style="margin:0">Meals</h1><a href="/o/settings" class="btn">Settings</a></div>
       ${!data.profile_ready ? `<div class="banner warn">Add your PayID in <a href="/o/settings">Settings</a> before finalising a real bill.</div>` : ""}
-      ${data.review_count ? `<div class="banner warn">${data.review_count} incoming transfer${data.review_count > 1 ? "s need" : " needs"} your review — open the dinner's Payments tab.</div>` : ""}
+      ${data.review_count ? `<div class="banner warn">${data.review_count} incoming transfer${data.review_count > 1 ? "s need" : " needs"} your review — open the meal's Payments tab.</div>` : ""}
       ${now.length ? `<section><h2>Now</h2>${now.map(dinnerCard).join("")}</section>` : ""}
       ${known.restaurants.length ? `<section class="card stack">
         <h2>Where are you eating?</h2>
@@ -40,18 +40,18 @@ async function home() {
         ${known.restaurants.length > 6 ? `<button class="small" id="moreplaces">All ${known.restaurants.length} restaurants</button>` : ""}
       </section>` : ""}
       <form id="new" class="card stack">
-        <h2>${known.restaurants.length ? "Somewhere new" : "New dinner"}</h2>
+        <h2>${known.restaurants.length ? "Somewhere new" : "New meal"}</h2>
         <div><label for="rn">Restaurant</label><input id="rn" maxlength="80" placeholder="e.g. Lantern Kitchen" autocomplete="off"></div>
         <div id="rsaved"></div>
         <div><label for="tn">Table (optional)</label><input id="tn" maxlength="20" placeholder="e.g. 12" style="max-width:10rem"></div>
-        <button class="primary block">Start dinner</button>
+        <button class="primary block">Start meal</button>
       </form>
-      ${earlier.length ? `<p class="center"><button class="small" id="showearlier">Earlier dinners (${earlier.length})</button></p>
-        <section id="earlier" hidden><h2>Earlier dinners</h2>${earlier.map(dinnerCard).join("")}</section>` : ""}
+      ${earlier.length ? `<p class="center"><button class="small" id="showearlier">Earlier meals (${earlier.length})</button></p>
+        <section id="earlier" hidden><h2>Earlier meals</h2>${earlier.map(dinnerCard).join("")}</section>` : ""}
       ${data.dinners.some((d) => !d.is_demo) ? "" : `<section class="card stack">
         <h2>Try it first</h2>
-        <p class="muted">A demo dinner with a sample menu, guests, orders and receipt. Payments are simulated — nothing touches your bank.</p>
-        <button id="demo" class="block">Create demo dinner</button>
+        <p class="muted">A demo meal with a sample menu, guests, orders and receipt. Payments are simulated — nothing touches your bank.</p>
+        <button id="demo" class="block">Create demo meal</button>
       </section>`}
       <p class="center"><button class="small" id="out">Sign out</button></p>
     </div>`;
@@ -90,7 +90,7 @@ function dinnerCard(d) {
   const [label, tone] = d.status === "finalised" ? (d.waiting_on ? [`Waiting on ${d.waiting_on}`, "warn"] : ["All paid", "good"])
     : isCurrent(d) ? ["Open", "info"] : ["Done", ""];
   return `<a class="card row between" href="/o/d/${d.id}" style="display:flex;text-decoration:none;color:inherit;margin-top:.75rem">
-    <div class="grow"><b>${esc(d.restaurant_name || "Dinner")}</b>${d.table_label ? ` · Table ${esc(d.table_label)}` : ""} <span class="muted">${esc(d.code)}</span>
+    <div class="grow"><b>${esc(d.restaurant_name || "Meal")}</b>${d.table_label ? ` · Table ${esc(d.table_label)}` : ""} <span class="muted">${esc(d.code)}</span>
       <div class="muted">${when(d.created_at)} · ${d.people} people${d.is_demo ? " · demo" : ""}</div></div>
     <span class="state ${tone}">${label}</span>
   </a>`;
@@ -130,12 +130,12 @@ function startAtSheet(r) {
       : `<p class="muted">Menu saved ${dayOf(r.menu_updated_at)}, ${r.dishes} dishes. Guests can see it as soon as they scan in.</p>`}
     <form id="startat" class="stack">
       <div><label for="stn">Table (optional)</label><input id="stn" maxlength="20" placeholder="e.g. 12" style="max-width:10rem"></div>
-      ${!r.dishes ? `<button class="primary block" data-mode="scan">Start dinner</button>`
+      ${!r.dishes ? `<button class="primary block" data-mode="scan">Start meal</button>`
         : old ? `<button class="primary block" data-mode="scan">Use it and scan the menu again</button><button class="block" data-mode="saved">Just use the saved menu</button>`
         : `<button class="primary block" data-mode="saved">Start with the saved menu</button><button class="block" data-mode="scan">Use it and scan the menu again</button>`}
       ${r.dishes ? `<p class="muted">Scanning again keeps guests on the saved menu meanwhile, updates dishes in place and notes what changed.</p>` : ""}
     </form>
-    ${restaurantId ? "" : `<p class="center"><a href="/o/r/${r.id}">${r.dishes ? "See or update the menu" : "Add the menu now"}, without starting a dinner</a></p>`}`);
+    ${restaurantId ? "" : `<p class="center"><a href="/o/r/${r.id}">${r.dishes ? "See or update the menu" : "Add the menu now"}, without starting a meal</a></p>`}`);
   $("#startat", s.el).addEventListener("submit", async (e) => {
     e.preventDefault();
     const mode = e.submitter?.dataset.mode || "saved";
@@ -158,7 +158,7 @@ async function settings() {
       <h1 style="margin-top:1rem">Settings</h1>
       <form id="prof" class="card stack">
         <h2>Where guests pay you</h2>
-        <div><label for="myname">Your name at dinners</label><input id="myname" maxlength="40" value="${esc(p.my_name || "")}" placeholder="Derek"></div>
+        <div><label for="myname">Your name at meals</label><input id="myname" maxlength="40" value="${esc(p.my_name || "")}" placeholder="Derek"></div>
         <div class="field-row">
           <div><label for="ptype">PayID type</label><select id="ptype">
             ${[["phone", "Mobile number"], ["email", "Email"], ["abn", "ABN"], ["org_id", "Organisation ID"]].map(([v, l]) => `<option value="${v}" ${p.payid_type === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -190,7 +190,7 @@ async function settings() {
         <h2>Menu and receipt reading</h2>
         <p>${d.extraction_enabled ? `On — photos are read by ${esc(d.extraction_model)}.` : "Off — no Anthropic API key on the server. Menus and receipts can still be typed in by hand (the demo's sample photos still work)."}</p>
       </section>
-      <p><a href="/o">← Dinners</a></p>
+      <p><a href="/o">← Meals</a></p>
     </div>`;
   $("#prof").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -251,12 +251,12 @@ function renderRestaurant() {
   const scroll = window.scrollY;
   app.innerHTML = `
     <div class="wrap">
-      <p style="margin:.75rem 0 0"><a href="/o">← All dinners</a></p>
+      <p style="margin:.75rem 0 0"><a href="/o">← All meals</a></p>
       <section class="card stack">
         <h1 style="margin:0">${esc(r.name)}</h1>
         <p class="muted">${r.visits ? `${r.visits} visit${r.visits === 1 ? "" : "s"}, last ${ago(r.last_visit)}` : "Not been yet"} ·
           ${r.dishes ? `menu updated ${dayOf(r.menu_updated_at)} (${ago(r.menu_updated_at)})` : "no menu saved yet"}</p>
-        <button class="primary block" data-startdinner>Start a dinner here</button>
+        <button class="primary block" data-startdinner>Start a meal here</button>
       </section>
       <div id="pane"></div>
     </div>`;
@@ -265,8 +265,8 @@ function renderRestaurant() {
 }
 
 function renderDinner() {
-  document.title = `${S.dinner.restaurant_name || "Dinner"} — organiser`;
-  $("#title").textContent = `${S.dinner.restaurant_name || "Dinner"}${S.dinner.table_label ? ` · Table ${S.dinner.table_label}` : ""}`;
+  document.title = `${S.dinner.restaurant_name || "Meal"} — organiser`;
+  $("#title").textContent = `${S.dinner.restaurant_name || "Meal"}${S.dinner.table_label ? ` · Table ${S.dinner.table_label}` : ""}`;
   const needsReview = S.bank_review.filter((t) => t.match_state === "review").length;
   const tabs = [
     ["share", "Share"], ["menu", `Menu${S.menu.pages.some((p) => p.status === "review") ? " •" : ""}`], ["bill", "Bill"],
@@ -275,12 +275,12 @@ function renderDinner() {
   const scroll = window.scrollY;
   app.innerHTML = `
     <div class="wrap">
-      <p style="margin:.75rem 0 0"><a href="/o">← All dinners / start a new one</a></p>
+      <p style="margin:.75rem 0 0"><a href="/o">← All meals / start a new one</a></p>
       <div class="row between" style="margin-top:.5rem">
         <div><b>${esc(S.dinner.code)}</b> · <span class="state ${locked() ? "good" : S.dinner.reopened ? "warn" : "info"}">${locked() ? "Finalised" : S.dinner.reopened ? "Reopened" : "Open"}</span>${S.dinner.is_demo ? ' <span class="state">Demo</span>' : ""}</div>
         <a class="btn small" href="/d/${esc(S.public_token)}">My diner view</a>
       </div>
-      <nav class="subtabs" aria-label="Dinner sections">${tabs.map(([k, l]) => `<button class="chip" data-dtab="${k}" aria-pressed="${dtab === k}">${l}</button>`).join("")}</nav>
+      <nav class="subtabs" aria-label="Meal sections">${tabs.map(([k, l]) => `<button class="chip" data-dtab="${k}" aria-pressed="${dtab === k}">${l}</button>`).join("")}</nav>
       <div id="pane"></div>
     </div>`;
   ({ share: paneShare, menu: paneMenu, bill: paneBill, receipt: paneReceipt, pay: panePay, log: paneLog }[dtab] || paneShare)();
@@ -291,7 +291,7 @@ function renderDinner() {
 function paneShare() {
   $("#pane").innerHTML = `
     <section class="card center stack">
-      <img class="qr" src="${oBase}/qr.svg?r=${S.dinner.revision}" alt="QR code for this dinner">
+      <img class="qr" src="${oBase}/qr.svg?r=${S.dinner.revision}" alt="QR code for this meal">
       <p><b>“Scan this to see the menu, record what you order, and help sort out the bill.”</b></p>
       <div class="row" style="justify-content:center"><code style="word-break:break-all">${esc(S.share_url)}</code></div>
       <button class="small" data-copy="${esc(S.share_url)}">Copy link</button>
@@ -397,7 +397,7 @@ function paneMenu() {
         <button class="primary grow" id="upbtn">Upload</button></div>
       </form>
       ${!S.extraction_enabled ? `<div class="banner info">Photo reading is off on this server, so you'll type dishes in below. ${S.dinner?.is_demo ? "Sample photos from the demo still read." : ""}</div>` : ""}
-      <p class="muted">${place ? "Check each page once it's read, then save it to the menu. Your next dinner here starts with it."
+      <p class="muted">${place ? "Check each page once it's read, then save it to the menu. Your next meal here starts with it."
         : "Share the QR code straight away — guests see each page as soon as you publish it."}</p>
     </section>
     ${m.pages.map((p) => {
@@ -831,7 +831,7 @@ function panePay() {
         ${(t.candidates || []).map((c) => `<div class="editor"><b>${esc(c.name)}</b> (${esc(c.reference)}) owes ${money(c.outstanding)}<div class="who">${c.reasons.map(esc).join(" · ")}</div>
           <button class="small primary" data-txconfirm="${t.id}" data-pid="${c.participant_id}">Confirm from ${esc(c.name)}</button></div>`).join("")}
         <div class="row" style="margin-top:.35rem"><select data-txpick="${t.id}" style="width:auto"><option value="">Someone else…</option>${S.participants.filter((p) => !p.is_organiser).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>
-          <button class="small" data-txignore="${t.id}">Not a dinner payment</button></div>
+          <button class="small" data-txignore="${t.id}">Not a meal payment</button></div>
       </div></div>`).join("")}</section>` : ""}
     <section class="card">
       <h2>Payment history</h2>

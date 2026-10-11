@@ -63,8 +63,8 @@ function renderConn() {
 }
 
 function render() {
-  document.title = S.dinner.restaurant_name || "Dinner";
-  $("#title").textContent = `${S.dinner.restaurant_name || "Dinner"}${S.dinner.table_label ? ` · Table ${S.dinner.table_label}` : ""}`;
+  document.title = S.dinner.restaurant_name || "Meal";
+  $("#title").textContent = `${S.dinner.restaurant_name || "Meal"}${S.dinner.table_label ? ` · Table ${S.dinner.table_label}` : ""}`;
   // The organiser looking at the diner view needs a way back.
   const back = $("#orgback");
   if (back) { back.hidden = !S.organiser; back.href = `/o/d/${S.dinner.id}`; }
@@ -100,13 +100,13 @@ function renderJoin() {
   $("#tabs").innerHTML = "";
   app.innerHTML = `
     <div class="wrap hero stack">
-      <h1>${esc(S.dinner.restaurant_name || "Dinner")}</h1>
+      <h1>${esc(S.dinner.restaurant_name || "Meal")}</h1>
       <p>See the menu, record what you order, and help sort out the bill.</p>
       <form id="join" class="card stack">
         <div><label for="name">Your name (shown to the table)</label>
         <input id="name" name="name" autocomplete="given-name" maxlength="40" required></div>
-        <button class="primary block">Join the dinner</button>
-        <p class="muted">No app or account needed. This phone remembers you for this dinner.
+        <button class="primary block">Join the meal</button>
+        <p class="muted">No app or account needed. This phone remembers you for this meal.
         If you switch phones, ask the organiser for a personal link.</p>
       </form>
     </div>`;

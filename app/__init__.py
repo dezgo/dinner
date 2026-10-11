@@ -1,4 +1,4 @@
-"""Dinner Tab — read the menu, record orders, split the bill, get paid back."""
+"""Meal Tab (formerly Dinner Tab) — read the menu, record orders, split the bill, get paid back."""
 
 import shutil
 import subprocess
